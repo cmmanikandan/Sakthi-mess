@@ -18,6 +18,7 @@ export default function AdminSettingsPage() {
   const [address, setAddress] = useState(
     restaurantConfig.address || '12, Gandhi Road, Anna Nagar, Chennai - 600040'
   );
+  const [isOpen, setIsOpen] = useState(restaurantConfig.isOpen ?? true);
   const [saved, setSaved] = useState(false);
 
   const handleSave = (e: React.FormEvent) => {
@@ -29,6 +30,7 @@ export default function AdminSettingsPage() {
       address,
       deliveryFee: Number(deliveryFee),
       freeDeliveryThreshold: Number(freeDeliveryThreshold),
+      isOpen,
     });
     setSaved(true);
     setTimeout(() => setSaved(false), 2500);
@@ -56,6 +58,42 @@ export default function AdminSettingsPage() {
         onSubmit={handleSave}
         className="bg-white rounded-3xl p-6 border border-neutral-200 shadow-xs space-y-6 text-xs"
       >
+        {/* Shop Live Status Toggle */}
+        <div
+          className={`p-4 rounded-2xl border flex items-center justify-between transition ${
+            isOpen ? 'bg-emerald-50/60 border-emerald-200' : 'bg-red-50/60 border-red-200'
+          }`}
+        >
+          <div>
+            <div className="flex items-center gap-2">
+              <span
+                className={`w-2.5 h-2.5 rounded-full ${
+                  isOpen ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'
+                }`}
+              />
+              <h3 className="font-extrabold text-xs text-neutral-900">
+                Store Status: {isOpen ? 'OPEN (Accepting Orders)' : 'CLOSED (Ordering Paused)'}
+              </h3>
+            </div>
+            <p className="text-[11px] text-neutral-500 mt-0.5">
+              {isOpen
+                ? 'Customers can place doorstep delivery orders. Kitchen receives orders in real time.'
+                : 'Customers can browse the menu, but checkout is disabled until opening.'}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setIsOpen(!isOpen)}
+            className={`px-4 py-2 rounded-xl font-bold text-xs shadow-xs transition ${
+              isOpen
+                ? 'bg-red-600 hover:bg-red-700 text-white'
+                : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+            }`}
+          >
+            {isOpen ? 'Close Store' : 'Open Store'}
+          </button>
+        </div>
+
         {/* Brand Section */}
         <div className="space-y-4">
           <h2 className="font-black text-sm text-neutral-900 border-b border-neutral-100 pb-3 flex items-center gap-2">

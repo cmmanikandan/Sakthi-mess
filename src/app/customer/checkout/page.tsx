@@ -36,7 +36,7 @@ export default function CustomerCheckoutPage() {
     orderSpecialInstructions,
   } = useCart();
   const { user, addDeliveryAddress } = useAuth();
-  const { createOrder } = useCanteen();
+  const { createOrder, restaurantConfig } = useCanteen();
 
   // Selected delivery address
   const savedAddresses: DeliveryAddress[] =
@@ -113,6 +113,11 @@ export default function CustomerCheckoutPage() {
     if (items.length === 0) return;
     setIsProcessing(true);
     setPaymentError(null);
+
+    if (restaurantConfig?.isOpen === false) {
+      setPaymentError('SAKTHI MESS is currently closed. Online ordering is paused until opening at 7:00 AM.');
+      return;
+    }
 
     const orderItems = toOrderItems();
 
@@ -617,14 +622,29 @@ export default function CustomerCheckoutPage() {
               </p>
             </div>
 
+            {/* Store Closed Banner */}
+            {restaurantConfig?.isOpen === false && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-2xl text-xs text-red-700 space-y-0.5">
+                <p className="font-extrabold flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-red-600 inline-block" />
+                  <span>Store Currently Closed</span>
+                </p>
+                <p className="text-[11px] text-red-600">
+                  SAKTHI MESS reopens at 7:00 AM. Ordering is temporarily paused.
+                </p>
+              </div>
+            )}
+
             {/* Place Order CTA */}
             <button
               onClick={handlePlaceOrder}
-              disabled={isProcessing}
+              disabled={isProcessing || restaurantConfig?.isOpen === false}
               className="w-full py-3.5 rounded-2xl bg-[#E23744] hover:bg-[#B91C2B] disabled:bg-stone-300 text-white font-black text-sm flex items-center justify-center gap-2 shadow-xs transition active:scale-95"
             >
               {isProcessing ? (
                 <span>Processing Order...</span>
+              ) : restaurantConfig?.isOpen === false ? (
+                <span>STORE CLOSED · REOPENS 7:00 AM</span>
               ) : (
                 <span>PLACE ORDER · ₹{total}</span>
               )}

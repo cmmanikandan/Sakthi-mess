@@ -24,7 +24,7 @@ export function TopNavigation() {
   const pathname = usePathname();
   const router = useRouter();
   const { user, role, loginAs } = useAuth();
-  const { notifications, favorites } = useCanteen();
+  const { notifications, favorites, restaurantConfig } = useCanteen();
   const { totalItems, subtotal } = useCart();
 
   const [mounted, setMounted] = React.useState(false);
@@ -45,14 +45,27 @@ export function TopNavigation() {
   return (
     <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-[#E8E8E8] transition-all">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-[72px] md:h-[78px] flex items-center justify-between gap-3">
-        {/* Logo & Brand Name */}
-        <Link
-          href="/customer/home"
-          className="flex items-center py-1 group focus:outline-none rounded-xl transition-transform hover:scale-[1.01]"
-          aria-label="SAKTHI MESS Customer Home"
-        >
-          <BrandLogo size="md" />
-        </Link>
+        {/* Logo & Brand Name & Store Status Badge */}
+        <div className="flex items-center gap-2">
+          <Link
+            href="/customer/home"
+            className="flex items-center py-1 group focus:outline-none rounded-xl transition-transform hover:scale-[1.01]"
+            aria-label="SAKTHI MESS Customer Home"
+          >
+            <BrandLogo size="md" />
+          </Link>
+          {restaurantConfig?.isOpen ? (
+            <span className="hidden sm:inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              <span>Open</span>
+            </span>
+          ) : (
+            <span className="hidden sm:inline-flex items-center gap-1 text-[10px] font-bold text-red-700 bg-red-50 px-2 py-0.5 rounded-full border border-red-200">
+              <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
+              <span>Closed</span>
+            </span>
+          )}
+        </div>
 
         {/* Desktop Nav Links */}
         <nav className="hidden md:flex items-center gap-1.5">

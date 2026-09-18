@@ -5,6 +5,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCart } from '@/context/CartContext';
+import { useCanteen } from '@/context/CanteenContext';
 import {
   Trash2,
   Plus,
@@ -19,6 +20,7 @@ import {
 
 export default function CustomerCartPage() {
   const router = useRouter();
+  const { restaurantConfig } = useCanteen();
   const {
     items,
     updateQuantity,
@@ -250,14 +252,34 @@ export default function CustomerCartPage() {
           </div>
         </div>
 
+        {/* Store Closed Warning */}
+        {restaurantConfig?.isOpen === false && (
+          <div className="p-3 bg-red-50 border border-red-200 rounded-2xl text-xs text-red-700 space-y-0.5">
+            <p className="font-extrabold flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-red-600 inline-block" />
+              <span>SAKTHI MESS is currently closed</span>
+            </p>
+            <p className="text-[11px] text-red-600">
+              Opening again at 7:00 AM. You can keep items in your cart and order once open.
+            </p>
+          </div>
+        )}
+
         {/* Proceed to Checkout Button */}
-        <div className="pt-3">
+        <div className="pt-2">
           <button
             onClick={() => router.push('/customer/checkout')}
-            className="w-full py-3.5 rounded-2xl bg-[#E23744] hover:bg-[#B91C2B] text-white font-black text-sm flex items-center justify-center gap-2 shadow-xs transition active:scale-95"
+            disabled={restaurantConfig?.isOpen === false}
+            className="w-full py-3.5 rounded-2xl bg-[#E23744] hover:bg-[#B91C2B] disabled:bg-stone-300 text-white font-black text-sm flex items-center justify-center gap-2 shadow-xs transition active:scale-95"
           >
-            <span>Proceed to Checkout · ₹{total}</span>
-            <ArrowRight className="w-4 h-4" />
+            {restaurantConfig?.isOpen === false ? (
+              <span>STORE CLOSED · REOPENS 7:00 AM</span>
+            ) : (
+              <>
+                <span>Proceed to Checkout · ₹{total}</span>
+                <ArrowRight className="w-4 h-4" />
+              </>
+            )}
           </button>
         </div>
       </div>
