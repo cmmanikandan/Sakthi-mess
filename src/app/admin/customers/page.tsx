@@ -1,365 +1,445 @@
 'use client';
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useCanteen } from '@/context/CanteenContext';
-import { supabase } from '@/lib/supabase';
-import { Users, ShieldOff, ShieldCheck, Mail, ShoppingBag, DollarSign } from 'lucide-react';
+import {
+  Users,
+  ShieldOff,
+  ShieldCheck,
+  Mail,
+  ShoppingBag,
+  DollarSign,
+  Search,
+  Phone,
+  Calendar,
+  Eye,
+  Edit2,
+  X,
+  Check,
+  MapPin,
+  Utensils,
+} from 'lucide-react';
 
 interface CustomerRecord {
   id: string;
   name: string;
   email: string;
-  avatarUrl?: string;
-  orders: number;
-  spent: number;
-  status: 'Active' | 'Blocked';
+  phone: string;
+  address?: string;
+  status: 'Active' | 'Inactive';
 }
+
+const DEFAULT_CUSTOMERS: CustomerRecord[] = [
+  {
+    id: 'cust-1',
+    name: 'Hari Prassath',
+    email: 'customer@sakthimess.com',
+    phone: '+91 98765 43210',
+    address: '12, Gandhi Road, Anna Nagar, Chennai - 600040',
+    status: 'Active',
+  },
+  {
+    id: 'cust-2',
+    name: 'Priya Sundaram',
+    email: 'priya.s@example.com',
+    phone: '+91 98401 23456',
+    address: '45, Second Main Road, T. Nagar, Chennai - 600017',
+    status: 'Active',
+  },
+  {
+    id: 'cust-3',
+    name: 'Rajesh Kumar',
+    email: 'rajesh.k@example.com',
+    phone: '+91 97890 54321',
+    address: '8, North Usman Road, T. Nagar, Chennai - 600017',
+    status: 'Active',
+  },
+  {
+    id: 'cust-4',
+    name: 'Ananya Krishnan',
+    email: 'ananya.k@example.com',
+    phone: '+91 94440 98765',
+    address: '22, Velachery Main Road, Chennai - 600042',
+    status: 'Active',
+  },
+];
 
 export default function AdminCustomersPage() {
   const { orders } = useCanteen();
-  const [search, setSearch] = useState('');
-  const [blockedIds, setBlockedIds] = useState<string[]>([]);
-  const [registeredCustomers, setRegisteredCustomers] = useState<any[]>([]);
-
-  // Load registered customers from Supabase DB & persistent storage with Realtime sync
-  useEffect(() => {
-    let isMounted = true;
-    async function loadCustomers() {
+  const [customers, setCustomers] = useState<CustomerRecord[]>(() => {
+    if (typeof window !== 'undefined') {
       try {
-        const { data, error } = await supabase.from('registered_customers').select('*');
-        if (!error && data && isMounted) {
-          const mapped = data.map((d) => ({
-            id: d.id,
-            name: d.name,
-            email: d.email,
-            avatarUrl: d.avatar_url,
-          }));
-          setRegisteredCustomers(mapped);
-          localStorage.setItem('bc_registered_customers', JSON.stringify(mapped));
-        } else {
-          const raw = localStorage.getItem('bc_registered_customers');
-          if (raw && isMounted) setRegisteredCustomers(JSON.parse(raw));
-        }
-      } catch {
-        const raw = localStorage.getItem('bc_registered_customers');
-        if (raw && isMounted) setRegisteredCustomers(JSON.parse(raw));
-      }
+        const saved = localStorage.getItem('sakthi_admin_customers');
+        if (saved) return JSON.parse(saved);
+      } catch {}
     }
-    loadCustomers();
+    return DEFAULT_CUSTOMERS;
+  });
 
-    const channel = supabase
-      .channel('registered_customers_changes')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'registered_customers' },
-        (payload) => {
-          if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
-            const row: any = payload.new;
-            setRegisteredCustomers((prev) => {
-              const existing = prev.findIndex((c) => c.email?.toLowerCase() === row.email?.toLowerCase());
-              const record = { id: row.id, name: row.name, email: row.email, avatarUrl: row.avatar_url };
-              if (existing >= 0) {
-                const next = [...prev];
-                next[existing] = record;
-                return next;
-              }
-              return [...prev, record];
-            });
-          }
-        }
-      )
-      .subscribe();
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'Active' | 'Inactive'>('ALL');
+  const [viewingCustomer, setViewingCustomer] = useState<CustomerRecord | null>(null);
+  const [editingCustomer, setEditingCustomer] = useState<CustomerRecord | null>(null);
 
-    return () => {
-      isMounted = false;
-      supabase.removeChannel(channel);
-    };
-  }, []);
+  // Edit fields
+  const [editName, setEditName] = useState('');
+  const [editEmail, setEditEmail] = useState('');
+  const [editPhone, setEditPhone] = useState('');
 
-  // Dynamically compile real customers with DP, name, email & ordering stats
-  const customers = useMemo<CustomerRecord[]>(() => {
-    const custMap = new Map<string, CustomerRecord>();
-
-    // 1. Seed from registered customer accounts
-    registeredCustomers.forEach((rc) => {
-      const email = (rc.email || '').trim().toLowerCase();
-      if (!email) return;
-      custMap.set(email, {
-        id: rc.id || email,
-        name: rc.name || email.split('@')[0],
-        email: rc.email,
-        avatarUrl: rc.avatarUrl,
-        orders: 0,
-        spent: 0,
-        status: blockedIds.includes(rc.id) || blockedIds.includes(email) ? 'Blocked' : 'Active',
-      });
-    });
-
-    // 2. Also check currently logged-in customer in localStorage
+  // Persist customer state changes
+  const persistCustomers = (updated: CustomerRecord[]) => {
+    setCustomers(updated);
     try {
-      const savedUser = localStorage.getItem('bc_custom_user');
-      if (savedUser) {
-        const u = JSON.parse(savedUser);
-        const email = (u?.email || '').trim().toLowerCase();
-        if (email && u?.role === 'customer') {
-          const existing = custMap.get(email) || {
-            id: u.id || email,
-            name: u.name || email.split('@')[0],
-            email: u.email,
-            avatarUrl: u.avatarUrl,
-            orders: 0,
-            spent: 0,
-            status: blockedIds.includes(u.id) || blockedIds.includes(email) ? 'Blocked' : 'Active',
-          };
-          if (u.avatarUrl) existing.avatarUrl = u.avatarUrl;
-          if (u.name) existing.name = u.name;
-          custMap.set(email, existing);
-        }
-      }
+      localStorage.setItem('sakthi_admin_customers', JSON.stringify(updated));
     } catch {}
+  };
 
-    // 3. Populate and tally stats from canteen token orders
-    orders.forEach((o) => {
-      const email = (o.userEmail || (o.userId?.includes('@') ? o.userId : '')).trim().toLowerCase();
-      const fallbackKey = email || (o.userName || o.userId || '').trim().toLowerCase();
-      if (!fallbackKey) return;
+  // Compute metrics per customer
+  const enrichedCustomers = useMemo(() => {
+    return customers.map((c) => {
+      const userOrders = orders.filter(
+        (o) =>
+          o.userName?.toLowerCase() === c.name.toLowerCase() ||
+          o.userPhone === c.phone ||
+          (o.userId && o.userId === c.id)
+      );
 
-      const existing = custMap.get(fallbackKey) || {
-        id: o.userId || fallbackKey,
-        name: o.userName || 'Canteen Customer',
-        email: o.userEmail || (fallbackKey.includes('@') ? fallbackKey : `${fallbackKey.replace(/\s+/g, '.')}@college.edu`),
-        avatarUrl: o.userAvatar,
-        orders: 0,
-        spent: 0,
-        status: blockedIds.includes(fallbackKey) ? 'Blocked' : 'Active',
+      const totalSpent = userOrders.reduce((s, o) => s + o.total, 0);
+      const lastOrder = userOrders.length > 0 ? userOrders[0].createdAt : null;
+
+      return {
+        ...c,
+        ordersCount: userOrders.length,
+        totalSpent,
+        lastOrder,
+        userOrders,
       };
-
-      if (o.userAvatar && !existing.avatarUrl) {
-        existing.avatarUrl = o.userAvatar;
-      }
-      if (o.userName && (!existing.name || existing.name === 'Online Customer')) {
-        existing.name = o.userName;
-      }
-      if (o.userEmail && !existing.email) {
-        existing.email = o.userEmail;
-      }
-
-      existing.orders += 1;
-      if (o.paymentStatus === 'VERIFIED' || o.orderStatus === 'PAID' || o.orderStatus === 'READY' || o.orderStatus === 'SERVED') {
-        existing.spent += o.total;
-      }
-      custMap.set(fallbackKey, existing);
     });
+  }, [customers, orders]);
 
-    return Array.from(custMap.values());
-  }, [registeredCustomers, orders, blockedIds]);
+  // Filtered List
+  const filteredList = useMemo(() => {
+    return enrichedCustomers.filter((c) => {
+      if (statusFilter !== 'ALL' && c.status !== statusFilter) return false;
+      if (search.trim()) {
+        const q = search.toLowerCase();
+        return (
+          c.name.toLowerCase().includes(q) ||
+          c.email.toLowerCase().includes(q) ||
+          c.phone.includes(q)
+        );
+      }
+      return true;
+    });
+  }, [enrichedCustomers, statusFilter, search]);
 
-  const filtered = customers.filter(
-    (c) =>
-      c.name.toLowerCase().includes(search.toLowerCase()) ||
-      c.email.toLowerCase().includes(search.toLowerCase())
-  );
-
-  const totalOrders = customers.reduce((s, c) => s + c.orders, 0);
-  const totalSpent = customers.reduce((s, c) => s + c.spent, 0);
-  const activeCount = customers.filter((c) => c.status === 'Active').length;
-
-  const toggleBlock = (id: string) => {
-    setBlockedIds((prev) =>
-      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+  const toggleStatus = (id: string) => {
+    const updated = customers.map((c) =>
+      c.id === id ? { ...c, status: (c.status === 'Active' ? 'Inactive' : 'Active') as 'Active' | 'Inactive' } : c
     );
+    persistCustomers(updated);
+  };
+
+  const openEdit = (c: CustomerRecord) => {
+    setEditingCustomer(c);
+    setEditName(c.name);
+    setEditEmail(c.email);
+    setEditPhone(c.phone);
+  };
+
+  const handleSaveEdit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingCustomer) return;
+    const updated = customers.map((c) =>
+      c.id === editingCustomer.id
+        ? {
+            ...c,
+            name: editName.trim() || c.name,
+            email: editEmail.trim() || c.email,
+            phone: editPhone.trim() || c.phone,
+          }
+        : c
+    );
+    persistCustomers(updated);
+    setEditingCustomer(null);
   };
 
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-black text-[#201611] tracking-tight">Customer Management</h1>
-          <p className="text-xs sm:text-sm text-[#5C4E46] mt-0.5">
-            Verified campus customers, profile display pictures & digital ordering history
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl sm:text-3xl font-black text-neutral-900 tracking-tight">
+              Customer Management
+            </h1>
+            <span className="px-2.5 py-0.5 rounded-full bg-red-100 text-[#E23744] text-[11px] font-bold">
+              {customers.length} Registered
+            </span>
+          </div>
+          <p className="text-xs sm:text-sm text-neutral-500 mt-0.5">
+            View customer ordering history, delivery addresses, and account status
           </p>
         </div>
-      </div>
 
-      {/* Summary Cards */}
-      <div className="grid grid-cols-3 gap-3">
-        <div className="bg-white p-4 rounded-3xl border border-stone-200 shadow-2xs text-center">
-          <p className="text-2xl font-black text-[#201611]">{customers.length}</p>
-          <p className="text-[10px] font-bold text-stone-400 uppercase mt-0.5">Total Customers</p>
-        </div>
-        <div className="bg-white p-4 rounded-3xl border border-stone-200 shadow-2xs text-center">
-          <p className="text-2xl font-black text-[#16A34A]">{activeCount}</p>
-          <p className="text-[10px] font-bold text-stone-400 uppercase mt-0.5">Active</p>
-        </div>
-        <div className="bg-white p-4 rounded-3xl border border-stone-200 shadow-2xs text-center">
-          <p className="text-2xl font-black text-[#FF5722]">₹{totalSpent.toLocaleString('en-IN')}</p>
-          <p className="text-[10px] font-bold text-stone-400 uppercase mt-0.5">Total Spent</p>
-        </div>
-      </div>
-
-      {/* Search */}
-      <div className="bg-white p-4 rounded-3xl border border-stone-200 shadow-2xs">
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search by customer name or email address..."
-          className="w-full px-4 py-2.5 text-xs border border-stone-200 rounded-2xl bg-stone-50 text-[#201611] focus:outline-none focus:border-[#FF5722]"
-        />
-      </div>
-
-      {/* Customer List / Table */}
-      {filtered.length === 0 ? (
-        <div className="bg-white rounded-3xl p-12 text-center border border-stone-200 shadow-xs space-y-3">
-          <div className="w-12 h-12 rounded-full bg-stone-100 text-stone-400 flex items-center justify-center mx-auto">
-            <Users className="w-6 h-6" />
+        {/* Search & Filters */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="relative">
+            <Search className="w-4 h-4 text-neutral-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search by name, email or phone..."
+              className="pl-9 pr-3 py-2 text-xs bg-white border border-neutral-200 rounded-xl w-60 focus:outline-none focus:ring-2 focus:ring-[#E23744]/25"
+            />
           </div>
-          <div className="space-y-1">
-            <h3 className="text-sm font-bold text-[#201611]">No Customers Found</h3>
-            <p className="text-xs text-stone-400">
-              {customers.length === 0
-                ? 'Customers will automatically appear here as accounts register and digital tokens are ordered.'
-                : 'No customers match your current search criteria.'}
-            </p>
-          </div>
-        </div>
-      ) : (
-        <>
-          {/* Mobile Cards (No mobile numbers shown) */}
-          <div className="sm:hidden space-y-3">
-            {filtered.map((c) => (
-              <div
-                key={c.id}
-                className={`bg-white rounded-3xl p-4 border shadow-xs space-y-3.5 ${
-                  c.status === 'Blocked' ? 'border-red-200 opacity-75' : 'border-stone-200'
+
+          <div className="flex bg-neutral-100 p-0.5 rounded-xl text-xs font-bold">
+            {(['ALL', 'Active', 'Inactive'] as const).map((st) => (
+              <button
+                key={st}
+                type="button"
+                onClick={() => setStatusFilter(st)}
+                className={`px-3 py-1.5 rounded-lg transition ${
+                  statusFilter === st
+                    ? 'bg-white text-neutral-900 shadow-xs'
+                    : 'text-neutral-500 hover:text-neutral-900'
                 }`}
               >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    {/* Customer DP */}
-                    <div className="w-11 h-11 rounded-2xl ring-2 ring-stone-200 overflow-hidden bg-stone-100 shrink-0 flex items-center justify-center">
-                      {c.avatarUrl ? (
-                        <img
-                          src={c.avatarUrl}
-                          alt={c.name}
-                          className="w-full h-full object-cover"
-                          referrerPolicy="no-referrer"
-                        />
-                      ) : (
-                        <div className="w-full h-full bg-gradient-to-br from-[#FF5722] to-orange-700 text-white flex items-center justify-center font-black text-sm">
-                          {(c.name || 'C').charAt(0).toUpperCase()}
-                        </div>
-                      )}
-                    </div>
-                    <div>
-                      <p className="font-bold text-sm text-[#201611]">{c.name}</p>
-                      <p className="text-[11px] text-[#8C7E76] break-all">{c.email}</p>
-                    </div>
-                  </div>
-                  <span
-                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${
-                      c.status === 'Active' ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-700'
-                    }`}
-                  >
-                    {c.status}
-                  </span>
-                </div>
-
-                <div className="flex items-center justify-between text-xs text-stone-500 pt-1 border-t border-stone-100">
-                  <span className="flex items-center gap-1 font-semibold text-stone-700">
-                    <ShoppingBag className="w-3.5 h-3.5 text-[#FF5722]" />
-                    {c.orders} {c.orders === 1 ? 'token' : 'tokens'}
-                  </span>
-                  <span className="font-black text-[#FF5722]">
-                    Total Spent: ₹{c.spent.toLocaleString('en-IN')}
-                  </span>
-                </div>
-
-                <div className="pt-1">
-                  <button
-                    onClick={() => toggleBlock(c.id)}
-                    className={`w-full py-2 rounded-xl text-[11px] font-bold flex items-center justify-center gap-1.5 transition ${
-                      c.status === 'Active'
-                        ? 'bg-amber-50 text-amber-700 hover:bg-amber-100'
-                        : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
-                    }`}
-                  >
-                    {c.status === 'Active' ? <ShieldOff className="w-3.5 h-3.5" /> : <ShieldCheck className="w-3.5 h-3.5" />}
-                    {c.status === 'Active' ? 'Block Account' : 'Unblock Account'}
-                  </button>
-                </div>
-              </div>
+                {st === 'ALL' ? 'All' : st}
+              </button>
             ))}
           </div>
+        </div>
+      </div>
 
-          {/* Desktop Table */}
-          <div className="hidden sm:block bg-white rounded-3xl border border-stone-200 shadow-xs overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-[#FAF8F5] border-b border-stone-200 text-[#8C7E76] uppercase font-bold">
-                  <tr>
-                    <th className="p-4">Customer</th>
-                    <th className="p-4">Email Address</th>
-                    <th className="p-4">Tokens Ordered</th>
-                    <th className="p-4">Total Spent</th>
-                    <th className="p-4">Status</th>
-                    <th className="p-4 text-right">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-stone-100">
-                  {filtered.map((c) => (
-                    <tr key={c.id} className="hover:bg-[#FAF8F5]/80 transition">
-                      <td className="p-4">
-                        <div className="flex items-center gap-3">
-                          {/* Customer DP */}
-                          <div className="w-10 h-10 rounded-2xl ring-2 ring-stone-200 overflow-hidden bg-stone-100 shrink-0 flex items-center justify-center">
-                            {c.avatarUrl ? (
-                              <img
-                                src={c.avatarUrl}
-                                alt={c.name}
-                                className="w-full h-full object-cover"
-                                referrerPolicy="no-referrer"
-                              />
-                            ) : (
-                              <div className="w-full h-full bg-gradient-to-br from-[#FF5722] to-orange-700 text-white flex items-center justify-center font-black text-sm">
-                                {(c.name || 'C').charAt(0).toUpperCase()}
-                              </div>
-                            )}
-                          </div>
-                          <div>
-                            <p className="font-bold text-sm text-[#201611]">{c.name}</p>
-                            <span className="text-[10px] text-stone-400 font-medium">Verified Campus Member</span>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="p-4 font-semibold text-stone-700">{c.email}</td>
-                      <td className="p-4 font-bold text-stone-700">{c.orders} tokens</td>
-                      <td className="p-4 font-black text-[#FF5722]">₹{c.spent.toLocaleString('en-IN')}</td>
-                      <td className="p-4">
-                        <span
-                          className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${
-                            c.status === 'Active' ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-700'
-                          }`}
-                        >
-                          {c.status}
-                        </span>
-                      </td>
-                      <td className="p-4 text-right">
-                        <button
-                          onClick={() => toggleBlock(c.id)}
-                          className="px-3.5 py-1.5 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 font-bold text-[11px] transition"
-                        >
-                          {c.status === 'Active' ? 'Block' : 'Unblock'}
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+      {/* Customer Table */}
+      <div className="bg-white rounded-3xl border border-neutral-200 shadow-xs overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead className="bg-neutral-50 border-b border-neutral-200 text-neutral-400 uppercase tracking-wider font-bold">
+              <tr>
+                <th className="py-3.5 px-4">Customer</th>
+                <th className="py-3.5 px-4">Contact</th>
+                <th className="py-3.5 px-4">Orders</th>
+                <th className="py-3.5 px-4">Total Spent</th>
+                <th className="py-3.5 px-4">Last Order</th>
+                <th className="py-3.5 px-4">Status</th>
+                <th className="py-3.5 px-4 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-neutral-100">
+              {filteredList.map((c) => (
+                <tr key={c.id} className="hover:bg-neutral-50/60 transition">
+                  <td className="py-3.5 px-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-full bg-red-50 text-[#E23744] font-black flex items-center justify-center text-xs shrink-0">
+                        {c.name.slice(0, 2).toUpperCase()}
+                      </div>
+                      <div>
+                        <p className="font-bold text-neutral-900 text-sm">{c.name}</p>
+                        <p className="text-[11px] text-neutral-400 truncate max-w-[180px]">
+                          {c.address || 'Chennai, Tamil Nadu'}
+                        </p>
+                      </div>
+                    </div>
+                  </td>
+
+                  <td className="py-3.5 px-4">
+                    <p className="font-medium text-neutral-800">{c.email}</p>
+                    <p className="text-[11px] text-neutral-500">{c.phone}</p>
+                  </td>
+
+                  <td className="py-3.5 px-4 font-bold text-neutral-900">
+                    {c.ordersCount} orders
+                  </td>
+
+                  <td className="py-3.5 px-4 font-black text-neutral-900">
+                    ₹{c.totalSpent}
+                  </td>
+
+                  <td className="py-3.5 px-4 text-neutral-500">
+                    {c.lastOrder
+                      ? new Date(c.lastOrder).toLocaleDateString('en-IN', {
+                          day: 'numeric',
+                          month: 'short',
+                        })
+                      : 'None yet'}
+                  </td>
+
+                  <td className="py-3.5 px-4">
+                    <span
+                      className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                        c.status === 'Active'
+                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                          : 'bg-neutral-100 text-neutral-600 border border-neutral-200'
+                      }`}
+                    >
+                      {c.status}
+                    </span>
+                  </td>
+
+                  <td className="py-3.5 px-4 text-right">
+                    <div className="flex items-center justify-end gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setViewingCustomer(c)}
+                        className="p-1.5 rounded-lg bg-neutral-100 hover:bg-neutral-200 text-neutral-700 transition"
+                        title="View Orders"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openEdit(c)}
+                        className="p-1.5 rounded-lg bg-neutral-100 hover:bg-neutral-200 text-neutral-700 transition"
+                        title="Edit Customer"
+                      >
+                        <Edit2 className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => toggleStatus(c.id)}
+                        className={`p-1.5 rounded-lg text-xs font-bold transition ${
+                          c.status === 'Active'
+                            ? 'bg-red-50 text-[#E23744] hover:bg-red-100'
+                            : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                        }`}
+                        title={c.status === 'Active' ? 'Deactivate' : 'Activate'}
+                      >
+                        {c.status === 'Active' ? (
+                          <ShieldOff className="w-3.5 h-3.5" />
+                        ) : (
+                          <ShieldCheck className="w-3.5 h-3.5" />
+                        )}
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* VIEW CUSTOMER MODAL */}
+      {viewingCustomer && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-4 border border-neutral-200">
+            <div className="flex items-center justify-between pb-3 border-b border-neutral-100">
+              <div>
+                <h3 className="text-base font-black text-neutral-900">{viewingCustomer.name}</h3>
+                <p className="text-xs text-neutral-500">{viewingCustomer.email} · {viewingCustomer.phone}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setViewingCustomer(null)}
+                className="p-1 rounded-lg text-neutral-400 hover:text-neutral-700"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              <h4 className="text-xs font-bold text-neutral-700 uppercase tracking-wider">
+                Saved Delivery Location
+              </h4>
+              <div className="p-3 bg-neutral-50 rounded-2xl border border-neutral-200 text-xs flex items-start gap-2.5">
+                <MapPin className="w-4 h-4 text-[#E23744] shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-semibold text-neutral-800">
+                    {viewingCustomer.address || '12, Gandhi Road, Chennai - 600001'}
+                  </p>
+                  <p className="text-[11px] text-neutral-400">Doorstep delivery available</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-2 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setViewingCustomer(null)}
+                className="px-4 py-2 bg-neutral-900 text-white text-xs font-bold rounded-xl"
+              >
+                Close
+              </button>
             </div>
           </div>
-        </>
+        </div>
+      )}
+
+      {/* EDIT CUSTOMER MODAL */}
+      {editingCustomer && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <form
+            onSubmit={handleSaveEdit}
+            className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl space-y-4 border border-neutral-200"
+          >
+            <div className="flex items-center justify-between pb-2 border-b border-neutral-100">
+              <h3 className="text-base font-black text-neutral-900">Edit Customer</h3>
+              <button
+                type="button"
+                onClick={() => setEditingCustomer(null)}
+                className="p-1 rounded-lg text-neutral-400 hover:text-neutral-700"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="block font-bold text-neutral-700 mb-1">Full Name</label>
+                <input
+                  type="text"
+                  required
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  className="w-full px-3 py-2 border border-neutral-200 rounded-xl"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-neutral-700 mb-1">Email</label>
+                <input
+                  type="email"
+                  required
+                  value={editEmail}
+                  onChange={(e) => setEditEmail(e.target.value)}
+                  className="w-full px-3 py-2 border border-neutral-200 rounded-xl"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-neutral-700 mb-1">Phone Number</label>
+                <input
+                  type="text"
+                  required
+                  value={editPhone}
+                  onChange={(e) => setEditPhone(e.target.value)}
+                  className="w-full px-3 py-2 border border-neutral-200 rounded-xl"
+                />
+              </div>
+            </div>
+
+            <div className="pt-2 flex justify-end gap-2 border-t border-neutral-100">
+              <button
+                type="button"
+                onClick={() => setEditingCustomer(null)}
+                className="px-4 py-2 border border-neutral-200 rounded-xl font-bold text-neutral-600 text-xs"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="px-5 py-2 bg-[#E23744] hover:bg-[#B91C2B] text-white font-bold rounded-xl text-xs flex items-center gap-1"
+              >
+                <Check className="w-3.5 h-3.5" />
+                <span>Save</span>
+              </button>
+            </div>
+          </form>
+        </div>
       )}
     </div>
   );

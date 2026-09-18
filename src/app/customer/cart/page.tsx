@@ -5,30 +5,51 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCart } from '@/context/CartContext';
-import { useAuth } from '@/context/AuthContext';
-import { Trash2, Plus, Minus, ArrowRight, ArrowLeft, ShoppingBag } from 'lucide-react';
+import {
+  Trash2,
+  Plus,
+  Minus,
+  ArrowRight,
+  ArrowLeft,
+  ShoppingBag,
+  Bike,
+  Sparkles,
+  MessageSquare,
+} from 'lucide-react';
 
 export default function CustomerCartPage() {
   const router = useRouter();
-  const { user } = useAuth();
-  const { items, updateQuantity, removeFromCart, toggleParcel, clearCart, subtotal, parcelTotal, tax, total } = useCart();
+  const {
+    items,
+    updateQuantity,
+    removeFromCart,
+    clearCart,
+    subtotal,
+    deliveryFee,
+    freeDeliveryThreshold,
+    amountNeededForFreeDelivery,
+    discount,
+    total,
+    orderSpecialInstructions,
+    setOrderSpecialInstructions,
+  } = useCart();
 
   if (items.length === 0) {
     return (
       <div className="max-w-xl mx-auto px-4 py-20 text-center space-y-4">
-        <div className="w-20 h-20 mx-auto rounded-full bg-orange-50 border border-orange-100 flex items-center justify-center text-3xl text-[#FF5722]">
+        <div className="w-20 h-20 mx-auto rounded-full bg-rose-50 border border-rose-100 flex items-center justify-center text-3xl text-[#E23744]">
           <ShoppingBag className="w-9 h-9" />
         </div>
-        <h1 className="text-xl sm:text-2xl font-extrabold text-[#201611]">
+        <h1 className="text-xl sm:text-2xl font-black text-[#1C1C1C]">
           Your cart is empty
         </h1>
-        <p className="text-xs sm:text-sm text-[#5C4E46] max-w-sm mx-auto">
-          Find something delicious to eat from our campus canteen menu.
+        <p className="text-xs sm:text-sm text-[#696969] max-w-sm mx-auto">
+          Add something delicious from SAKTHI MESS to get started.
         </p>
         <div className="pt-2">
           <Link
             href="/customer/menu"
-            className="inline-flex items-center gap-2 px-6 py-3 bg-[#FF5722] hover:bg-[#F4511E] text-white text-xs sm:text-sm font-bold rounded-2xl shadow-[0_4px_15px_rgba(255,87,34,0.3)] transition"
+            className="inline-flex items-center gap-2 px-6 py-3 bg-[#E23744] hover:bg-[#B91C2B] text-white text-xs sm:text-sm font-extrabold rounded-2xl shadow-xs transition active:scale-95"
           >
             <span>Browse Menu</span>
             <ArrowRight className="w-4 h-4" />
@@ -47,38 +68,63 @@ export default function CustomerCartPage() {
   };
 
   return (
-    <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 sm:pt-6 space-y-6">
+    <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 sm:pt-6 pb-28 md:pb-12 space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <button
             onClick={handleSafeBack}
-            className="p-2 -ml-2 rounded-full text-[#5C4E46] hover:text-[#201611] hover:bg-stone-100 transition"
+            className="p-2 -ml-2 rounded-full text-[#696969] hover:text-[#1C1C1C] hover:bg-stone-100 transition"
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
           <div>
-            <h1 className="text-2xl font-extrabold text-[#201611] tracking-tight">
+            <h1 className="text-2xl font-black text-[#1C1C1C] tracking-tight">
               My Cart
             </h1>
-            <p className="text-xs text-[#5C4E46]">
-              {items.length} {items.length === 1 ? 'item' : 'different items'} selected
+            <p className="text-xs text-[#696969]">
+              {items.length} {items.length === 1 ? 'dish' : 'dishes'} selected
             </p>
           </div>
         </div>
 
         <button
           onClick={clearCart}
-          className="text-xs text-red-500 hover:text-red-700 font-semibold flex items-center gap-1 p-1"
+          className="text-xs text-rose-600 hover:text-rose-800 font-bold flex items-center gap-1 p-1 transition"
         >
           <Trash2 className="w-3.5 h-3.5" />
           <span>Clear All</span>
         </button>
       </div>
 
+      {/* Free Delivery Banner */}
+      <div className="p-3.5 rounded-2xl bg-rose-50/70 border border-rose-200/80 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-xl bg-white flex items-center justify-center text-[#2E9B5B] shrink-0 shadow-2xs">
+            <Bike className="w-4 h-4" />
+          </div>
+          <div>
+            {amountNeededForFreeDelivery > 0 ? (
+              <p className="text-xs font-bold text-[#1C1C1C]">
+                Add <strong className="text-[#E23744]">₹{amountNeededForFreeDelivery}</strong> more for{' '}
+                <span className="text-[#2E9B5B]">FREE Doorstep Delivery</span>!
+              </p>
+            ) : (
+              <p className="text-xs font-bold text-[#2E9B5B] flex items-center gap-1">
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Congratulations! You qualify for FREE Delivery!</span>
+              </p>
+            )}
+          </div>
+        </div>
+        <Link href="/customer/menu" className="text-xs font-black text-[#E23744] shrink-0 hover:underline">
+          + Add Food
+        </Link>
+      </div>
+
       {/* Cart Items List */}
-      <div className="bg-white rounded-3xl p-4 sm:p-5 border border-stone-200/80 shadow-xs divide-y divide-stone-100">
-        {items.map(({ food, quantity, isParcel }) => (
+      <div className="bg-white rounded-3xl p-4 sm:p-5 border border-[#E8E8E8] shadow-card divide-y divide-stone-100">
+        {items.map(({ food, quantity, specialInstructions }) => (
           <div
             key={food.id}
             className="py-4 first:pt-0 last:pb-0 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
@@ -86,128 +132,134 @@ export default function CustomerCartPage() {
             <div className="flex items-start gap-3.5">
               <div className="relative w-16 h-16 rounded-2xl overflow-hidden bg-stone-100 shrink-0 border border-stone-200 mt-0.5">
                 <Image
-                  src={food.imageUrl}
+                  src={food.imageUrl || '/logo.png'}
                   alt={food.name}
                   fill
+                  unoptimized
                   className="object-cover"
                 />
               </div>
 
               <div>
-                <h3 className="font-bold text-sm sm:text-base text-[#201611] line-clamp-1">
+                <h3 className="font-black text-sm sm:text-base text-[#1C1C1C] line-clamp-1">
                   {food.name}
                 </h3>
                 <div className="flex items-center gap-2 mt-0.5">
-                  <span className="text-xs font-bold text-[#FF5722]">
-                    ₹{food.price} each
-                  </span>
-                  {isParcel && (
-                    <span className="text-[10px] bg-orange-100 text-[#FF5722] font-black px-1.5 py-0.5 rounded-md">
-                      +₹5 Parcel
-                    </span>
-                  )}
+                  <span className="font-extrabold text-sm text-[#1C1C1C]">₹{food.price}</span>
+                  <span className="text-xs text-stone-400">× {quantity}</span>
                 </div>
 
-                {/* Parcel / Takeaway Option Feature */}
-                <div className="pt-1.5">
-                  <button
-                    type="button"
-                    onClick={() => toggleParcel(food.id)}
-                    className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold transition border ${
-                      isParcel
-                        ? 'bg-[#FF5722] text-white border-[#FF5722] shadow-2xs'
-                        : 'bg-stone-50 hover:bg-orange-50 hover:text-[#FF5722] text-stone-600 border-stone-200'
-                    }`}
-                  >
-                    <span>📦</span>
-                    <span>{isParcel ? 'Packed as Parcel (₹5)' : 'Takeaway / Parcel? (+₹5)'}</span>
-                  </button>
-                </div>
+                {specialInstructions && (
+                  <p className="text-[11px] font-medium text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md mt-1 inline-block border border-amber-200/60">
+                    Note: {specialInstructions}
+                  </p>
+                )}
               </div>
             </div>
 
-            <div className="flex items-center justify-between sm:justify-end gap-4 pt-2 sm:pt-0 border-t sm:border-t-0 border-stone-50">
-              {/* Quantity Controls */}
-              <div className="flex items-center bg-[#FAF8F5] border border-stone-200 rounded-xl p-1">
+            {/* Quantity Modifier & Subtotal */}
+            <div className="flex items-center justify-between sm:justify-end gap-4">
+              <div className="flex items-center bg-[#F8F8F8] border border-[#E8E8E8] rounded-xl overflow-hidden">
                 <button
                   onClick={() => updateQuantity(food.id, quantity - 1)}
-                  className="w-7 h-7 rounded-lg bg-white text-stone-700 hover:text-[#FF5722] flex items-center justify-center transition shadow-2xs"
+                  className="w-7 h-7 flex items-center justify-center hover:bg-stone-200 text-stone-700 transition"
                   aria-label="Decrease"
                 >
                   <Minus className="w-3.5 h-3.5" />
                 </button>
-                <span className="w-7 text-center font-bold text-xs text-[#201611]">
+                <span className="w-7 text-center text-xs font-black text-[#1C1C1C]">
                   {quantity}
                 </span>
                 <button
                   onClick={() => updateQuantity(food.id, quantity + 1)}
-                  className="w-7 h-7 rounded-lg bg-[#FF5722] text-white hover:bg-[#F4511E] flex items-center justify-center transition shadow-2xs"
+                  className="w-7 h-7 flex items-center justify-center hover:bg-stone-200 text-stone-700 transition"
                   aria-label="Increase"
                 >
                   <Plus className="w-3.5 h-3.5" />
                 </button>
               </div>
 
-              <div className="text-right">
-                <span className="font-extrabold text-sm sm:text-base text-[#201611]">
-                  ₹{(food.price + (isParcel ? 5 : 0)) * quantity}
+              <div className="text-right min-w-[70px]">
+                <span className="font-black text-sm text-[#1C1C1C]">
+                  ₹{food.price * quantity}
                 </span>
-                {isParcel && (
-                  <p className="text-[10px] text-stone-400 font-medium">incl. ₹{5 * quantity} pack</p>
-                )}
               </div>
+
+              <button
+                onClick={() => removeFromCart(food.id)}
+                className="p-1.5 text-stone-400 hover:text-rose-600 transition"
+                aria-label="Remove item"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
             </div>
           </div>
         ))}
       </div>
 
-      {/* Bill Details */}
-      <div className="bg-white rounded-3xl p-5 border border-stone-200/80 shadow-xs space-y-3">
-        <h2 className="text-xs font-bold text-[#8C7E76] uppercase tracking-wider">
+      {/* Special Delivery Instructions Input */}
+      <div className="bg-white rounded-3xl p-4 sm:p-5 border border-[#E8E8E8] shadow-card space-y-2">
+        <label className="text-xs font-black text-[#1C1C1C] flex items-center gap-1.5">
+          <MessageSquare className="w-4 h-4 text-[#E23744]" />
+          Order & Delivery Instructions
+        </label>
+        <input
+          type="text"
+          value={orderSpecialInstructions}
+          onChange={(e) => setOrderSpecialInstructions(e.target.value)}
+          placeholder="e.g. Ring bell twice, deliver at 2nd floor, extra spicy salna please"
+          className="w-full px-3.5 py-2.5 text-xs bg-[#F8F8F8] border border-[#E8E8E8] rounded-2xl focus:bg-white focus:border-[#E23744] focus:outline-none transition"
+          maxLength={150}
+        />
+      </div>
+
+      {/* Order Bill Summary */}
+      <div className="bg-white rounded-3xl p-5 border border-[#E8E8E8] shadow-card space-y-3">
+        <h2 className="text-sm font-black text-[#1C1C1C] border-b border-stone-100 pb-2">
           Bill Details
         </h2>
 
-        <div className="space-y-2 text-xs sm:text-sm">
-          <div className="flex justify-between text-[#5C4E46]">
+        <div className="space-y-2 text-xs">
+          <div className="flex items-center justify-between text-[#696969]">
             <span>Item Subtotal</span>
-            <span className="font-medium text-[#201611]">₹{subtotal}</span>
+            <span className="font-extrabold text-[#1C1C1C]">₹{subtotal}</span>
           </div>
 
-          {parcelTotal > 0 && (
-            <div className="flex justify-between text-[#5C4E46] animate-fadeIn">
-              <span className="flex items-center gap-1.5">
-                <span>📦 Parcel / Takeaway Charges</span>
-                <span className="text-[10px] bg-orange-100 text-orange-700 font-extrabold px-1.5 py-0.5 rounded-full">
-                  ₹5/item
-                </span>
-              </span>
-              <span className="font-bold text-[#FF5722]">+₹{parcelTotal}</span>
+          <div className="flex items-center justify-between text-[#696969]">
+            <div className="flex items-center gap-1">
+              <span>Delivery Fee</span>
+              {deliveryFee === 0 && (
+                <span className="text-[10px] text-[#2E9B5B] font-bold">(Free Delivery)</span>
+              )}
+            </div>
+            <span className="font-extrabold text-[#1C1C1C]">
+              {deliveryFee === 0 ? <span className="text-[#2E9B5B]">FREE</span> : `₹${deliveryFee}`}
+            </span>
+          </div>
+
+          {discount > 0 && (
+            <div className="flex items-center justify-between text-[#2E9B5B]">
+              <span>Discount</span>
+              <span className="font-bold">-₹{discount}</span>
             </div>
           )}
 
-          <div className="flex justify-between text-[#5C4E46]">
-            <span>Canteen Service & Digital Token Fee</span>
-            <span className="text-[#16A34A] font-bold">FREE</span>
-          </div>
-
-          <div className="border-t border-stone-100 pt-2 flex justify-between text-base font-extrabold text-[#201611]">
+          <div className="flex items-center justify-between pt-2 border-t border-stone-100 text-sm sm:text-base font-black text-[#1C1C1C]">
             <span>To Pay</span>
-            <span className="text-[#FF5722]">₹{total}</span>
+            <span className="text-[#E23744]">₹{total}</span>
           </div>
         </div>
-      </div>
 
-      {/* Checkout CTA */}
-      <div className="pt-2">
-        <Link
-          href={user ? "/customer/checkout" : "/login?redirect=/customer/cart"}
-          className="w-full py-4 bg-[#FF5722] hover:bg-[#F4511E] text-white font-bold rounded-2xl flex items-center justify-center gap-2 shadow-[0_4px_20px_rgba(255,87,34,0.3)] transition active:scale-[0.99]"
-        >
-          <span>{user ? 'Proceed to Checkout' : 'Login to Checkout'}</span>
-          <span className="text-white/80">·</span>
-          <span>₹{total}</span>
-          <ArrowRight className="w-4 h-4 ml-1" />
-        </Link>
+        {/* Proceed to Checkout Button */}
+        <div className="pt-3">
+          <button
+            onClick={() => router.push('/customer/checkout')}
+            className="w-full py-3.5 rounded-2xl bg-[#E23744] hover:bg-[#B91C2B] text-white font-black text-sm flex items-center justify-center gap-2 shadow-xs transition active:scale-95"
+          >
+            <span>Proceed to Checkout · ₹{total}</span>
+            <ArrowRight className="w-4 h-4" />
+          </button>
+        </div>
       </div>
     </div>
   );

@@ -9,48 +9,46 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        cream: {
-          50: '#FFFDF9',
-          100: '#FDFBF7',
-          200: '#F7F3EA',
-          300: '#EFEAE0',
-          400: '#E2DBD0',
+        brand: {
+          DEFAULT: '#E23744',
+          hover: '#B91C2B',
+          dark: '#B91C2B',
+          light: '#FFF1F2',
+          50: '#FFF1F2',
+          100: '#FFE4E6',
+          500: '#E23744',
+          600: '#B91C2B',
+          700: '#991B1B',
         },
-        canteen: {
-          orange: {
-            DEFAULT: '#FF5722',
-            hover: '#F4511E',
-            light: '#FFF0EB',
-            dark: '#D84315',
-          },
-          green: {
-            DEFAULT: '#16A34A',
-            hover: '#15803D',
-            light: '#DCFCE7',
-            dark: '#14532D',
-          },
-          dark: {
-            DEFAULT: '#201611',
-            muted: '#5C4E46',
-            light: '#8C7E76',
-          },
-          sand: '#EFEBE4',
+        primary: {
+          DEFAULT: '#E23744',
+          dark: '#B91C2B',
+          light: '#FFF1F2',
+        },
+        surface: {
+          DEFAULT: '#FFFFFF',
+          secondary: '#F8F8F8',
+          card: '#FFFFFF',
+          border: '#E8E8E8',
+        },
+        status: {
+          success: '#2E9B5B',
+          warning: '#F59E0B',
+          danger: '#DC2626',
         },
       },
       fontFamily: {
-        sans: ['var(--font-jakarta)', 'Inter', 'system-ui', 'sans-serif'],
+        sans: ['Inter', 'Plus Jakarta Sans', 'system-ui', 'sans-serif'],
       },
       boxShadow: {
-        card: '0 4px 20px -2px rgba(32, 22, 17, 0.05)',
-        'card-hover': '0 10px 30px -4px rgba(32, 22, 17, 0.12)',
-        float: '0 12px 35px -5px rgba(255, 87, 34, 0.25)',
+        subtle: '0 1px 3px rgba(0, 0, 0, 0.05)',
+        card: '0 2px 12px -2px rgba(28, 28, 28, 0.06)',
+        'card-hover': '0 8px 24px -4px rgba(28, 28, 28, 0.12)',
+        float: '0 10px 30px -5px rgba(226, 55, 68, 0.25)',
       },
       borderRadius: {
-        '2xl': '1.25rem',
-        '3xl': '1.75rem',
-      },
-      animation: {
-        'spin-slow': 'spin 3s linear infinite',
+        '2xl': '1rem',
+        '3xl': '1.5rem',
       },
     },
   },

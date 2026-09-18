@@ -8,7 +8,7 @@ import { FoodItem } from '@/types';
 import { useCart } from '@/context/CartContext';
 import { useCanteen } from '@/context/CanteenContext';
 import { useAuth } from '@/context/AuthContext';
-import { Star, Plus, Minus, Heart } from 'lucide-react';
+import { Star, Plus, Minus, Heart, Clock } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 interface FoodCardProps {
@@ -23,68 +23,47 @@ export function FoodCard({ food }: FoodCardProps) {
 
   const quantity = getItemQuantity(food.id);
   const isFav = favorites.includes(food.id);
-
-  // Availability is strictly determined by food.isAvailable set by Admin in panel
-  const isClosed = !food.isAvailable;
+  const isSoldOut = !food.isAvailable;
 
   const handleAdd = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (!user) {
-      router.push(`/login?redirect=/customer/menu`);
-      return;
-    }
-    if (isClosed) return;
+    if (isSoldOut) return;
     addToCart(food, 1);
   };
 
   const handleMinus = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (!user) {
-      router.push(`/login?redirect=/customer/menu`);
-      return;
-    }
     updateQuantity(food.id, quantity - 1);
   };
 
   const handlePlus = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (!user) {
-      router.push(`/login?redirect=/customer/menu`);
-      return;
-    }
-    if (isClosed) return;
+    if (isSoldOut) return;
     updateQuantity(food.id, quantity + 1);
   };
 
   const handleFavorite = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (!user) {
-      router.push(`/login?redirect=/customer/menu`);
-      return;
-    }
     toggleFavorite(food.id);
   };
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 15 }}
+      initial={{ opacity: 0, y: 12 }}
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true }}
-      transition={{ duration: 0.3 }}
+      transition={{ duration: 0.25 }}
       className={`group relative rounded-3xl p-3 sm:p-3.5 border transition-all flex flex-col justify-between ${
-        isClosed
-          ? 'bg-stone-100/90 border-stone-300 grayscale opacity-75'
-          : 'bg-white border-stone-200/80 shadow-[0_4px_16px_rgba(32,22,17,0.04)] hover:shadow-[0_10px_25px_rgba(32,22,17,0.08)] hover:border-stone-300'
+        isSoldOut
+          ? 'bg-stone-50 border-stone-200 opacity-80'
+          : 'bg-white border-[#E8E8E8] shadow-xs hover:shadow-card-hover hover:border-stone-300'
       }`}
     >
-      <Link
-        href={user ? `/customer/food/${food.id}` : `/login?redirect=/customer/food/${food.id}`}
-        className="block"
-      >
+      <Link href={`/customer/food/${food.id}`} className="block">
         {/* Food Image Container */}
         <div className="relative w-full aspect-[4/3] rounded-2xl overflow-hidden bg-stone-100 mb-3">
           <Image
@@ -94,124 +73,133 @@ export function FoodCard({ food }: FoodCardProps) {
             unoptimized
             sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
             className={`object-cover transition-transform duration-300 ${
-              isClosed ? 'grayscale contrast-75' : 'group-hover:scale-105'
+              isSoldOut ? 'grayscale contrast-75' : 'group-hover:scale-105'
             }`}
           />
 
+          {/* Sold Out Overlay */}
+          {isSoldOut && (
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-[2px] flex flex-col items-center justify-center text-center p-2">
+              <span className="text-white text-xs font-black tracking-wider uppercase bg-stone-900/90 px-3 py-1 rounded-full border border-white/20">
+                SOLD OUT
+              </span>
+            </div>
+          )}
+
           {/* Veg / Non-Veg Indicator */}
-          <div className="absolute top-2.5 left-2.5 bg-white/90 backdrop-blur-sm p-1 rounded-md shadow-sm">
+          <div className="absolute top-2.5 left-2.5 z-10 bg-white/95 backdrop-blur-xs p-1 rounded-lg shadow-sm border border-stone-200/60">
             <div
-              className={`w-3 h-3 rounded-sm border-2 flex items-center justify-center ${
-                food.isVeg ? 'border-[#16A34A]' : 'border-red-600'
+              className={`w-3.5 h-3.5 border-2 flex items-center justify-center ${
+                food.isVeg ? 'border-emerald-600' : 'border-rose-600'
               }`}
             >
               <div
                 className={`w-1.5 h-1.5 rounded-full ${
-                  food.isVeg ? 'bg-[#16A34A]' : 'bg-red-600'
+                  food.isVeg ? 'bg-emerald-600' : 'bg-rose-600'
                 }`}
               />
             </div>
           </div>
 
-          {/* Favorite Button */}
+          {/* Favorite button */}
           <button
             onClick={handleFavorite}
-            className="absolute top-2.5 right-2.5 p-1.5 rounded-full bg-white/90 backdrop-blur-sm text-stone-600 hover:text-red-500 shadow-sm transition active:scale-90"
-            aria-label="Add to favorites"
+            aria-label={isFav ? 'Remove from favorites' : 'Add to favorites'}
+            className="absolute top-2.5 right-2.5 z-10 w-8 h-8 rounded-full bg-white/95 backdrop-blur-xs flex items-center justify-center text-stone-600 hover:text-[#E23744] shadow-sm border border-stone-200/60 transition active:scale-90"
           >
             <Heart
-              className={`w-4 h-4 ${
-                isFav ? 'fill-red-500 text-red-500' : 'text-stone-600'
+              className={`w-4 h-4 transition ${
+                isFav ? 'fill-[#E23744] text-[#E23744]' : 'text-stone-600'
               }`}
             />
           </button>
 
-          {/* Overlay for Unavailable / Closed */}
-          {isClosed && (
-            <div className="absolute inset-0 bg-stone-900/60 backdrop-blur-[1px] flex items-center justify-center p-2 text-center">
-              <span className="bg-white/95 text-[#201611] text-xs font-black px-3.5 py-1 rounded-full shadow-sm">
-                Not Available
-              </span>
+          {/* Preparation time badge */}
+          {food.preparationTime && (
+            <div className="absolute bottom-2 left-2 z-10 inline-flex items-center gap-1 bg-black/75 backdrop-blur-xs text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
+              <Clock className="w-3 h-3 text-amber-400" />
+              <span>{food.preparationTime}</span>
             </div>
           )}
         </div>
 
-        {/* Content */}
-        <div>
-          <div className="flex items-center justify-between gap-1">
-            <h3 className="font-bold text-sm sm:text-base text-[#201611] group-hover:text-[#FF5722] transition-colors line-clamp-1">
+        {/* Details */}
+        <div className="space-y-1">
+          <div className="flex items-start justify-between gap-1.5">
+            <h3 className="text-sm font-black text-[#1C1C1C] leading-snug line-clamp-1 group-hover:text-[#E23744] transition">
               {food.name}
             </h3>
-            {food.rating && (
-              <div className="flex items-center gap-1 bg-[#FFF9F3] border border-orange-100 px-1.5 py-0.5 rounded-lg text-xs font-bold text-[#FF5722] shrink-0">
-                <Star className="w-3 h-3 fill-[#FF5722] text-[#FF5722]" />
-                <span>{food.rating}</span>
-              </div>
-            )}
           </div>
 
           {food.tamilName && (
-            <p className="text-[11px] text-[#8C7E76] font-medium mt-0.5">
+            <p className="text-[11px] font-semibold text-[#696969] leading-tight">
               {food.tamilName}
             </p>
           )}
+
+          <p className="text-xs text-[#696969] line-clamp-2 leading-relaxed">
+            {food.description}
+          </p>
+
+          {/* Rating */}
+          <div className="flex items-center gap-1 pt-0.5">
+            <div className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-emerald-50 text-emerald-700 text-[10px] font-extrabold border border-emerald-200/60">
+              <Star className="w-2.5 h-2.5 fill-emerald-600 text-emerald-600" />
+              <span>{food.rating || 4.8}</span>
+            </div>
+            <span className="text-[10px] text-stone-400 font-medium">
+              ({food.ratingCount || 100}+)
+            </span>
+          </div>
         </div>
       </Link>
 
-      {/* Bottom Bar: Price & Action */}
-      <div className="flex items-center justify-between mt-3 pt-2 border-t border-stone-100">
+      {/* Price & Add Action Button */}
+      <div className="flex items-center justify-between pt-3 mt-2 border-t border-stone-100">
         <div>
-          <span className="text-base font-extrabold text-[#201611]">
-            ₹{food.price}
-          </span>
+          <span className="text-base font-black text-[#1C1C1C]">₹{food.price}</span>
           {food.originalPrice && food.originalPrice > food.price && (
-            <span className="text-xs text-stone-400 line-through ml-1.5 font-medium">
+            <span className="text-xs text-[#696969] line-through ml-1.5">
               ₹{food.originalPrice}
             </span>
           )}
         </div>
 
-        {/* Quantity Controls / Add Button */}
-        {quantity > 0 && !isClosed ? (
-          <div className="flex items-center gap-2 bg-[#FAF8F5] border border-orange-200 rounded-2xl p-1 shadow-sm">
-            <button
-              onClick={handleMinus}
-              className="w-6 h-6 rounded-xl bg-white text-[#FF5722] hover:bg-orange-50 flex items-center justify-center transition shadow-xs active:scale-95"
-              aria-label="Decrease quantity"
-            >
-              <Minus className="w-3 h-3 stroke-[2.5]" />
-            </button>
-            <span className="text-xs font-bold text-[#201611] px-1 min-w-[14px] text-center">
-              {quantity}
+        <div>
+          {isSoldOut ? (
+            <span className="text-[11px] font-extrabold text-stone-400 uppercase bg-stone-100 px-3 py-1.5 rounded-xl border border-stone-200">
+              Unavailable
             </span>
-            <button
-              onClick={handlePlus}
-              className="w-6 h-6 rounded-xl bg-[#FF5722] text-white hover:bg-[#F4511E] flex items-center justify-center transition shadow-xs active:scale-95"
-              aria-label="Increase quantity"
-            >
-              <Plus className="w-3 h-3 stroke-[2.5]" />
-            </button>
-          </div>
-        ) : (
-          <button
-            onClick={handleAdd}
-            disabled={isClosed}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 shadow-sm active:scale-95 ${
-              !isClosed
-                ? 'bg-orange-50 text-[#FF5722] border border-orange-200 hover:bg-[#FF5722] hover:text-white'
-                : 'bg-stone-100 text-stone-400 border border-stone-200 cursor-not-allowed'
-            }`}
-          >
-            {!isClosed ? (
-              <>
+          ) : quantity > 0 ? (
+            <div className="flex items-center bg-[#FFF1F2] border border-rose-200 text-[#E23744] rounded-xl overflow-hidden shadow-xs">
+              <button
+                onClick={handleMinus}
+                className="w-7 h-7 flex items-center justify-center hover:bg-[#E23744] hover:text-white transition active:scale-95"
+                aria-label="Decrease quantity"
+              >
+                <Minus className="w-3.5 h-3.5" />
+              </button>
+              <span className="w-6 text-center text-xs font-black select-none">
+                {quantity}
+              </span>
+              <button
+                onClick={handlePlus}
+                className="w-7 h-7 flex items-center justify-center hover:bg-[#E23744] hover:text-white transition active:scale-95"
+                aria-label="Increase quantity"
+              >
                 <Plus className="w-3.5 h-3.5" />
-                <span>Add</span>
-              </>
-            ) : (
-              <span>Not Available</span>
-            )}
-          </button>
-        )}
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={handleAdd}
+              className="inline-flex items-center gap-1 px-3.5 py-1.5 bg-[#FFF1F2] hover:bg-[#E23744] text-[#E23744] hover:text-white border border-rose-200 hover:border-[#E23744] text-xs font-black rounded-xl transition shadow-xs active:scale-95"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Add</span>
+            </button>
+          )}
+        </div>
       </div>
     </motion.div>
   );

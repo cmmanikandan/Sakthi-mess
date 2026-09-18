@@ -3,14 +3,31 @@
 import React, { useState, useMemo } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { QRCodeSVG } from 'qrcode.react';
 import {
-  Search, Plus, Minus, Trash2, Printer, CheckCircle2,
-  Receipt, ShoppingCart, RefreshCw, X, ArrowRight, User, Phone,
-  Sparkles, Check, Package, Clock, DollarSign, Ban, AlertTriangle,
+  Search,
+  Plus,
+  Minus,
+  Trash2,
+  Printer,
+  CheckCircle2,
+  Receipt,
+  ShoppingCart,
+  RefreshCw,
+  X,
+  ArrowRight,
+  User,
+  Phone,
+  Sparkles,
+  Check,
+  Package,
+  Clock,
+  DollarSign,
+  Ban,
+  AlertTriangle,
+  Utensils,
 } from 'lucide-react';
 import { useCanteen } from '@/context/CanteenContext';
-import { FoodItem, Order, OrderItem, MealCategory } from '@/types';
+import { FoodItem, Order, MealCategory } from '@/types';
 import { BrandLogo } from '@/components/common/BrandLogo';
 
 interface PosItem {
@@ -30,7 +47,7 @@ export default function AdminPosPage() {
 
   // POS Cart State
   const [cart, setCart] = useState<PosItem[]>([]);
-  const [customerName, setCustomerName] = useState('Counter Cash Customer');
+  const [customerName, setCustomerName] = useState('Counter Customer');
   const [customerPhone, setCustomerPhone] = useState('');
   const [cashTendered, setCashTendered] = useState<string>('');
 
@@ -106,709 +123,527 @@ export default function AdminPosPage() {
     });
   };
 
-  const toggleParcel = (foodId: string) => {
-    setCart((prev) =>
-      prev.map((item) =>
-        item.food.id === foodId ? { ...item, isParcel: !item.isParcel } : item
-      )
-    );
-  };
-
-  const removeFromCart = (foodId: string) => {
+  const removeItem = (foodId: string) => {
     setCart((prev) => prev.filter((item) => item.food.id !== foodId));
   };
 
   const clearCart = () => {
     setCart([]);
-    setCustomerName('Counter Cash Customer');
-    setCustomerPhone('');
     setCashTendered('');
   };
 
-  // Calculations
+  // Totals
   const subtotal = useMemo(() => {
     return cart.reduce((sum, item) => sum + item.food.price * item.quantity, 0);
   }, [cart]);
 
-  const parcelTotal = useMemo(() => {
-    return cart.reduce((sum, item) => sum + (item.isParcel ? 5 * item.quantity : 0), 0);
-  }, [cart]);
+  const total = subtotal;
 
-  const total = subtotal + parcelTotal;
+  const cashTenderedNum = parseFloat(cashTendered) || total;
+  const changeDue = Math.max(0, cashTenderedNum - total);
 
-  const parsedCash = parseFloat(cashTendered) || 0;
-  const changeToReturn = parsedCash >= total ? parsedCash - total : 0;
-
-  // Single-click Cash Order & Slip Generation
-  const handleGenerateAndPrintToken = () => {
+  // Generate Cash Order & Open Print Slip
+  const handleGenerateAndPrintSlip = () => {
     if (cart.length === 0) return;
 
-    // Guard against billing unavailable dishes
-    const unavailableInCart = cart.filter((item) => {
-      const currentFood = foods.find((f) => f.id === item.food.id);
-      return !currentFood || !currentFood.isAvailable;
+    // Check if any cart item is currently unavailable
+    const unavailableItems = cart.filter((item) => {
+      const liveFood = foods.find((f) => f.id === item.food.id);
+      return liveFood ? !liveFood.isAvailable : false;
     });
-    if (unavailableInCart.length > 0) {
-      alert(`⚠️ Cannot process bill: "${unavailableInCart.map((i) => i.food.name).join(', ')}" is currently marked UNAVAILABLE. Please remove it from the cart.`);
+
+    if (unavailableItems.length > 0) {
+      alert(`Cannot create order: "${unavailableItems.map(i => i.food.name).join(', ')}" is out of stock!`);
       return;
     }
 
-    const orderItems: OrderItem[] = cart.map((item) => ({
+    const orderItems = cart.map((item) => ({
       foodId: item.food.id,
-      name: item.isParcel ? `${item.food.name} (Parcel 📦)` : item.food.name,
-      price: item.food.price + (item.isParcel ? 5 : 0),
+      name: item.food.name,
+      price: item.food.price,
       quantity: item.quantity,
-      imageUrl: item.food.imageUrl,
+      imageUrl: item.food.imageUrl || '',
+      isParcel: item.isParcel,
     }));
 
-    const finalCashTendered = parsedCash >= total ? parsedCash : total;
-    setCashGivenAtPayment(finalCashTendered);
+    const finalName = customerName.trim() || 'Counter Customer';
+    const finalPhone = customerPhone.trim() || undefined;
 
     const newOrder = createCashPosOrder(orderItems, {
-      name: customerName.trim() || 'Counter Cash Customer',
-      phone: customerPhone.trim() || 'Counter POS Till',
-      notes: `Cash POS Sale · Tendered: ₹${finalCashTendered} · Change: ₹${finalCashTendered - total}`,
+      name: finalName,
+      phone: finalPhone,
+      notes: `Cash Tendered: ₹${cashTenderedNum}`,
     });
 
+    setCashGivenAtPayment(cashTenderedNum);
     setCompletedOrder(newOrder);
     setShowSlipModal(true);
   };
 
-  const handlePrintSlip = () => {
-    if (typeof window !== 'undefined') {
-      window.print();
-    }
-  };
-
+  // Next Customer / Reset
   const handleNextCustomer = () => {
     setShowSlipModal(false);
     setCompletedOrder(null);
     clearCart();
+    setCustomerName('Counter Customer');
+    setCustomerPhone('');
+  };
+
+  // Print Slip
+  const handlePrintSlip = () => {
+    window.print();
   };
 
   return (
     <div className="space-y-6">
-      {/* Top Header / Context bar */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-5 rounded-3xl border border-stone-200 shadow-2xs">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-neutral-200">
         <div>
           <div className="flex items-center gap-2">
-            <span className="p-1.5 rounded-xl bg-orange-100 text-[#FF5722]">
-              <Receipt className="w-5 h-5" />
-            </span>
-            <h1 className="text-2xl font-black text-[#201611] tracking-tight">
-              Cash POS Terminal
+            <h1 className="text-2xl sm:text-3xl font-black text-neutral-900 tracking-tight">
+              POS & Counter Billing
             </h1>
-            <span className="bg-emerald-100 text-emerald-800 text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full">
-              Till #1 Active
+            <span className="px-2 py-0.5 rounded-full text-[11px] font-extrabold bg-red-100 text-[#E23744]">
+              KITCHEN LINKED
             </span>
           </div>
-          <p className="text-xs text-stone-500 mt-1">
-            Accept physical cash, pack parcel (+₹5), and generate instant printable tokens for counter customers.
+          <p className="text-xs sm:text-sm text-neutral-500 mt-0.5">
+            Instant billing, counter ticketing & thermal receipt generation
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
-          <div className="bg-stone-50 border border-stone-200 px-3.5 py-2 rounded-2xl flex items-center gap-2">
-            <span className="text-lg">{activeMealInfo.icon}</span>
-            <div>
-              <p className="text-[10px] font-bold text-stone-400 uppercase">Current Service</p>
-              <p className="text-xs font-black text-stone-700">{activeMealInfo.name}</p>
-            </div>
+        {activeMealInfo && (
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs font-semibold">
+            <span>{activeMealInfo.icon}</span>
+            <span>Active Service: {activeMealInfo.name}</span>
           </div>
-          <Link
-            href="/admin/orders"
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-2xl bg-stone-100 hover:bg-stone-200 text-stone-700 text-xs font-bold transition"
-          >
-            <span>Token Feed</span>
-            <ArrowRight className="w-3.5 h-3.5" />
-          </Link>
-        </div>
+        )}
       </div>
 
-      {/* Main Grid: Left is Food Menu, Right is Register Cart */}
+      {/* Main 2-Column POS Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* LEFT COLUMN: Food Catalog (7 cols on lg) */}
+        {/* LEFT COLUMN: Food Catalog (7 cols) */}
         <div className="lg:col-span-7 space-y-4">
           {/* Search & Filter Bar */}
-          <div className="bg-white p-4 rounded-3xl border border-stone-200 shadow-2xs space-y-3">
-            <div className="flex flex-col sm:flex-row gap-2.5">
-              {/* Search input */}
-              <div className="relative flex-1">
-                <Search className="w-4 h-4 text-stone-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search dish by name, category..."
-                  className="w-full pl-10 pr-4 py-2 text-xs border border-stone-200 rounded-2xl bg-stone-50 focus:outline-none focus:border-[#FF5722] focus:bg-white"
-                />
-                {searchQuery && (
-                  <button
-                    onClick={() => setSearchQuery('')}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                )}
-              </div>
-
-              {/* Diet & Stock filter pills */}
-              <div className="flex flex-wrap items-center gap-1.5">
-                <div className="flex items-center gap-1 bg-stone-100 p-1 rounded-2xl shrink-0">
-                  {(['ALL', 'VEG', 'NON_VEG'] as const).map((diet) => (
-                    <button
-                      key={diet}
-                      onClick={() => setDietFilter(diet)}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
-                        dietFilter === diet
-                          ? 'bg-white text-[#201611] shadow-xs'
-                          : 'text-stone-500 hover:text-stone-800'
-                      }`}
-                    >
-                      {diet === 'ALL' && 'All'}
-                      {diet === 'VEG' && '🌱 Veg'}
-                      {diet === 'NON_VEG' && '🍗 Non-Veg'}
-                    </button>
-                  ))}
-                </div>
-
-                <div className="flex items-center gap-1 bg-stone-100 p-1 rounded-2xl shrink-0">
-                  {(['ALL', 'AVAILABLE', 'UNAVAILABLE'] as const).map((status) => (
-                    <button
-                      key={status}
-                      onClick={() => setAvailabilityFilter(status)}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
-                        availabilityFilter === status
-                          ? status === 'UNAVAILABLE'
-                            ? 'bg-red-500 text-white shadow-xs'
-                            : status === 'AVAILABLE'
-                            ? 'bg-emerald-600 text-white shadow-xs'
-                            : 'bg-white text-[#201611] shadow-xs'
-                          : 'text-stone-500 hover:text-stone-800'
-                      }`}
-                    >
-                      {status === 'ALL' && 'All Status'}
-                      {status === 'AVAILABLE' && '✅ Available'}
-                      {status === 'UNAVAILABLE' && '🚫 Unavailable'}
-                    </button>
-                  ))}
-                </div>
-              </div>
+          <div className="bg-white p-4 rounded-2xl border border-neutral-200 shadow-xs space-y-3">
+            <div className="relative">
+              <Search className="w-4 h-4 text-neutral-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search dishes (Biryani, Parotta, Meals...)"
+                className="w-full pl-10 pr-4 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#E23744]/30 focus:border-[#E23744] transition"
+              />
             </div>
 
-            {/* Category horizontal pills */}
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
-              {categories.map((cat) => (
+            {/* Filter Pills */}
+            <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-neutral-100">
+              {/* Veg / Non-Veg filters */}
+              <div className="flex bg-neutral-100 p-0.5 rounded-lg text-[11px] font-bold">
                 <button
-                  key={cat}
-                  onClick={() => setSelectedCategory(cat)}
-                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition ${
-                    selectedCategory === cat
-                      ? 'bg-[#FF5722] text-white shadow-xs'
-                      : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
+                  type="button"
+                  onClick={() => setDietFilter('ALL')}
+                  className={`px-2.5 py-1 rounded-md transition ${
+                    dietFilter === 'ALL' ? 'bg-white text-neutral-900 shadow-xs' : 'text-neutral-500'
                   }`}
                 >
-                  {cat === 'ALL' ? '🍽️ All Dishes' : cat}
+                  All
                 </button>
-              ))}
+                <button
+                  type="button"
+                  onClick={() => setDietFilter('VEG')}
+                  className={`px-2.5 py-1 rounded-md transition ${
+                    dietFilter === 'VEG' ? 'bg-white text-emerald-700 shadow-xs' : 'text-neutral-500'
+                  }`}
+                >
+                  🌱 Veg
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDietFilter('NON_VEG')}
+                  className={`px-2.5 py-1 rounded-md transition ${
+                    dietFilter === 'NON_VEG' ? 'bg-white text-red-700 shadow-xs' : 'text-neutral-500'
+                  }`}
+                >
+                  🍗 Non-Veg
+                </button>
+              </div>
+
+              {/* Categories */}
+              <div className="flex items-center gap-1 overflow-x-auto max-w-full pb-1">
+                {categories.map((cat) => (
+                  <button
+                    key={cat}
+                    type="button"
+                    onClick={() => setSelectedCategory(cat)}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold whitespace-nowrap transition ${
+                      selectedCategory === cat
+                        ? 'bg-[#E23744] text-white'
+                        : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'
+                    }`}
+                  >
+                    {cat}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 
-          {/* Food Cards Grid */}
+          {/* Dish Grid */}
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             {filteredFoods.map((food) => {
-              const inCartItem = cart.find((i) => i.food.id === food.id);
-              const qtyInCart = inCartItem?.quantity || 0;
-              const isFoodAvailable = food.isAvailable;
-
+              const inCart = cart.find((i) => i.food.id === food.id);
               return (
                 <div
                   key={food.id}
-                  className={`rounded-3xl p-3 border transition-all flex flex-col justify-between group ${
-                    !isFoodAvailable
-                      ? 'bg-stone-50/90 border-stone-300 shadow-2xs opacity-85'
-                      : qtyInCart > 0
-                      ? 'bg-white border-[#FF5722] shadow-[0_4px_16px_rgba(255,87,34,0.15)] ring-1 ring-[#FF5722]'
-                      : 'bg-white border-stone-200 hover:border-stone-300 shadow-2xs hover:shadow-xs'
+                  onClick={() => food.isAvailable && addToCart(food)}
+                  className={`bg-white rounded-2xl border p-3 flex flex-col justify-between transition cursor-pointer relative overflow-hidden select-none ${
+                    !food.isAvailable
+                      ? 'opacity-60 bg-neutral-50 border-neutral-200 cursor-not-allowed'
+                      : inCart
+                      ? 'border-[#E23744] shadow-sm bg-red-50/20'
+                      : 'border-neutral-200 hover:border-neutral-300 hover:shadow-sm'
                   }`}
                 >
                   <div>
-                    {/* Image with veg badge */}
-                    <div className="relative aspect-[4/3] rounded-2xl overflow-hidden bg-stone-100 mb-2.5">
-                      <Image
-                        src={food.imageUrl || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=400&q=80'}
-                        alt={food.name}
-                        fill
-                        className={`object-cover transition-transform duration-300 ${
-                          !isFoodAvailable ? 'grayscale contrast-75' : 'group-hover:scale-105'
-                        }`}
-                      />
-                      {/* Veg indicator dot */}
+                    <div className="flex items-center justify-between gap-1 mb-1">
+                      <span className="text-[10px] font-bold uppercase text-neutral-400">
+                        {food.category}
+                      </span>
                       <span
-                        className={`absolute top-2 left-2 w-4 h-4 rounded-sm border bg-white flex items-center justify-center z-20 ${
-                          food.isVeg ? 'border-green-600' : 'border-red-600'
+                        className={`w-3 h-3 rounded-full flex items-center justify-center border text-[8px] ${
+                          food.isVeg
+                            ? 'border-emerald-600 text-emerald-600'
+                            : 'border-red-600 text-red-600'
                         }`}
                       >
-                        <span
-                          className={`w-2 h-2 rounded-full ${
-                            food.isVeg ? 'bg-green-600' : 'bg-red-600'
-                          }`}
-                        />
+                        ●
                       </span>
-
-                      {/* Unavailable Overlay Badge */}
-                      {!isFoodAvailable && (
-                        <div className="absolute inset-0 bg-stone-900/60 backdrop-blur-[1px] flex flex-col items-center justify-center p-2 text-center z-10">
-                          <span className="bg-red-600 text-white text-[10px] font-black px-2.5 py-1 rounded-full shadow-md flex items-center gap-1">
-                            <Ban className="w-3 h-3 stroke-[2.5]" />
-                            Unavailable
-                          </span>
-                        </div>
-                      )}
-
-                      {/* Quantity in bill badge */}
-                      {qtyInCart > 0 && isFoodAvailable && (
-                        <span className="absolute top-2 right-2 bg-[#FF5722] text-white font-black text-xs px-2 py-0.5 rounded-full shadow-md animate-in fade-in z-20">
-                          {qtyInCart} in bill
-                        </span>
-                      )}
                     </div>
 
-                    {/* Food info */}
-                    <div className="space-y-0.5">
-                      <div className="flex items-center justify-between gap-1">
-                        <p className="text-[10px] font-bold text-stone-400 uppercase tracking-wider">
-                          {food.category}
-                        </p>
-                        <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-md ${
-                          isFoodAvailable
-                            ? 'bg-emerald-50 text-emerald-700'
-                            : 'bg-red-100 text-red-700'
-                        }`}>
-                          {isFoodAvailable ? 'In Stock' : 'Out of Stock'}
-                        </span>
-                      </div>
-                      <h3 className="font-bold text-xs sm:text-sm text-[#201611] line-clamp-1 leading-snug">
-                        {food.name}
-                      </h3>
-                      <p className={`text-sm font-black ${isFoodAvailable ? 'text-[#FF5722]' : 'text-stone-400 line-through'}`}>
-                        ₹{food.price}
-                      </p>
-                    </div>
+                    <h4 className="font-bold text-xs text-neutral-900 line-clamp-2 leading-tight">
+                      {food.name}
+                    </h4>
                   </div>
 
-                  {/* Add / Qty Control Button */}
-                  <div className="mt-3 pt-2 border-t border-stone-100">
-                    {!isFoodAvailable ? (
-                      <div className="space-y-1">
-                        <button
-                          disabled
-                          className="w-full py-2 bg-stone-100 border border-stone-200 text-stone-400 font-bold text-xs rounded-xl cursor-not-allowed flex items-center justify-center gap-1.5"
-                        >
-                          <Ban className="w-3.5 h-3.5 text-red-500" />
-                          <span className="text-red-600">Unavailable</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => toggleFoodAvailability(food.id)}
-                          className="w-full text-[10px] text-stone-400 hover:text-emerald-600 font-semibold text-center hover:underline py-0.5 transition"
-                        >
-                          Set Available
-                        </button>
-                      </div>
-                    ) : qtyInCart === 0 ? (
-                      <button
-                        onClick={() => addToCart(food)}
-                        className="w-full py-2 bg-stone-100 hover:bg-[#FF5722] hover:text-white text-stone-800 font-bold text-xs rounded-xl transition flex items-center justify-center gap-1.5 active:scale-95"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                        <span>Add to Bill</span>
-                      </button>
+                  <div className="mt-3 pt-2 border-t border-neutral-100 flex items-center justify-between">
+                    <span className="font-extrabold text-sm text-neutral-900">
+                      ₹{food.price}
+                    </span>
+
+                    {!food.isAvailable ? (
+                      <span className="text-[10px] font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded">
+                        SOLD OUT
+                      </span>
+                    ) : inCart ? (
+                      <span className="text-xs font-black bg-[#E23744] text-white px-2 py-0.5 rounded-lg shadow-xs">
+                        {inCart.quantity} in cart
+                      </span>
                     ) : (
-                      <div className="flex items-center justify-between bg-stone-100 rounded-xl p-1">
-                        <button
-                          onClick={() => updateQuantity(food.id, -1)}
-                          className="w-7 h-7 rounded-lg bg-white text-stone-700 hover:bg-stone-200 font-black text-xs flex items-center justify-center transition shadow-2xs active:scale-90"
-                        >
-                          <Minus className="w-3 h-3" />
-                        </button>
-                        <span className="font-black text-xs text-[#201611] px-2">
-                          {qtyInCart}
-                        </span>
-                        <button
-                          onClick={() => updateQuantity(food.id, 1)}
-                          className="w-7 h-7 rounded-lg bg-[#FF5722] text-white hover:bg-orange-600 font-black text-xs flex items-center justify-center transition shadow-2xs active:scale-90"
-                        >
-                          <Plus className="w-3 h-3" />
-                        </button>
-                      </div>
+                      <span className="text-xs font-bold text-neutral-600 bg-neutral-100 hover:bg-[#E23744] hover:text-white px-2 py-0.5 rounded-lg transition">
+                        + Add
+                      </span>
                     )}
                   </div>
                 </div>
               );
             })}
           </div>
-
-          {filteredFoods.length === 0 && (
-            <div className="bg-white rounded-3xl p-12 text-center border border-stone-200">
-              <p className="text-3xl mb-2">🔍</p>
-              <h3 className="font-bold text-sm text-[#201611]">No dishes found</h3>
-              <p className="text-xs text-stone-400 mt-1">
-                Try searching for something else or adjust category filters.
-              </p>
-            </div>
-          )}
         </div>
 
-        {/* RIGHT COLUMN: POS Register Cart & Single-Click Checkout (5 cols on lg) */}
-        <div className="lg:col-span-5 sticky top-4 space-y-4">
-          <div className="bg-white rounded-3xl border border-stone-200 shadow-sm overflow-hidden">
-            {/* Register Card Header */}
-            <div className="px-5 py-4 border-b border-stone-100 flex items-center justify-between bg-[#FAF8F5]">
-              <div className="flex items-center gap-2">
-                <ShoppingCart className="w-4 h-4 text-[#FF5722]" />
-                <h2 className="font-black text-sm text-[#201611]">Current Cash Bill</h2>
-                <span className="bg-[#FF5722] text-white text-[10px] font-black px-2 py-0.5 rounded-full">
-                  {cart.reduce((s, i) => s + i.quantity, 0)} items
-                </span>
+        {/* RIGHT COLUMN: POS Cart & Billing (5 cols) */}
+        <div className="lg:col-span-5 bg-white rounded-3xl border border-neutral-200 shadow-sm p-4 sm:p-5 space-y-4">
+          <div className="flex items-center justify-between pb-3 border-b border-neutral-200">
+            <div className="flex items-center gap-2">
+              <ShoppingCart className="w-5 h-5 text-[#E23744]" />
+              <h2 className="font-black text-base text-neutral-900">Current Bill</h2>
+            </div>
+            {cart.length > 0 && (
+              <button
+                type="button"
+                onClick={clearCart}
+                className="text-xs text-red-600 hover:underline font-bold"
+              >
+                Clear All
+              </button>
+            )}
+          </div>
+
+          {/* Customer Meta */}
+          <div className="grid grid-cols-2 gap-2 text-xs">
+            <div>
+              <label className="block text-[11px] font-bold text-neutral-600 mb-1">
+                Customer Name
+              </label>
+              <input
+                type="text"
+                value={customerName}
+                onChange={(e) => setCustomerName(e.target.value)}
+                placeholder="Name"
+                className="w-full px-2.5 py-1.5 bg-neutral-50 border border-neutral-200 rounded-xl text-xs font-medium"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-bold text-neutral-600 mb-1">
+                Mobile (Optional)
+              </label>
+              <input
+                type="text"
+                value={customerPhone}
+                onChange={(e) => setCustomerPhone(e.target.value)}
+                placeholder="+91..."
+                className="w-full px-2.5 py-1.5 bg-neutral-50 border border-neutral-200 rounded-xl text-xs font-medium"
+              />
+            </div>
+          </div>
+
+          {/* Cart Items List */}
+          <div className="space-y-2 max-h-[320px] overflow-y-auto pr-1">
+            {cart.length === 0 ? (
+              <div className="text-center py-10 text-neutral-400">
+                <Utensils className="w-8 h-8 mx-auto mb-2 opacity-40" />
+                <p className="text-xs font-semibold">Bill is empty</p>
+                <p className="text-[11px]">Select items from the menu to add to bill</p>
               </div>
-              {cart.length > 0 && (
-                <button
-                  onClick={clearCart}
-                  className="text-stone-400 hover:text-red-600 text-xs font-bold flex items-center gap-1 transition"
-                  title="Clear Bill"
+            ) : (
+              cart.map((item) => (
+                <div
+                  key={item.food.id}
+                  className="flex items-center justify-between p-2.5 rounded-xl bg-neutral-50 border border-neutral-100 text-xs"
                 >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  <span>Reset</span>
-                </button>
-              )}
-            </div>
+                  <div className="flex-1 pr-2 truncate">
+                    <p className="font-bold text-neutral-900 truncate">{item.food.name}</p>
+                    <p className="text-[10px] text-neutral-500 font-semibold">
+                      ₹{item.food.price} each
+                    </p>
+                  </div>
 
-            {/* Optional Customer info */}
-            <div className="p-4 bg-stone-50/70 border-b border-stone-100 space-y-2 text-xs">
-              <div className="flex items-center gap-2">
-                <div className="relative flex-1">
-                  <User className="w-3.5 h-3.5 text-stone-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="text"
-                    value={customerName}
-                    onChange={(e) => setCustomerName(e.target.value)}
-                    placeholder="Customer Name (optional)"
-                    className="w-full pl-8 pr-3 py-1.5 text-xs bg-white border border-stone-200 rounded-xl"
-                  />
-                </div>
-                <div className="relative flex-1">
-                  <Phone className="w-3.5 h-3.5 text-stone-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="tel"
-                    value={customerPhone}
-                    onChange={(e) => setCustomerPhone(e.target.value)}
-                    placeholder="Mobile No. (optional)"
-                    className="w-full pl-8 pr-3 py-1.5 text-xs bg-white border border-stone-200 rounded-xl"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Cart Items List */}
-            <div className="p-4 divide-y divide-stone-100 max-h-[300px] overflow-y-auto space-y-3">
-              {cart.map((item) => (
-                <div key={item.food.id} className="pt-3 first:pt-0 space-y-2">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-1.5">
-                        <span
-                          className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                            item.food.isVeg ? 'bg-green-600' : 'bg-red-600'
-                          }`}
-                        />
-                        <h4 className="font-bold text-xs text-[#201611] line-clamp-1">
-                          {item.food.name}
-                        </h4>
-                        {(() => {
-                          const liveFood = foods.find((f) => f.id === item.food.id);
-                          if (liveFood && !liveFood.isAvailable) {
-                            return (
-                              <span className="text-[9px] font-black bg-red-100 text-red-700 px-1.5 py-0.5 rounded-md shrink-0">
-                                Out of Stock
-                              </span>
-                            );
-                          }
-                          return null;
-                        })()}
-                      </div>
-                      <p className="text-[11px] text-stone-500 mt-0.5">
-                        ₹{item.food.price} × {item.quantity} = ₹{item.food.price * item.quantity}
-                      </p>
-                    </div>
-
-                    {/* Quantity controls */}
-                    <div className="flex items-center gap-1.5 bg-stone-100 rounded-xl p-1">
+                  <div className="flex items-center gap-2 shrink-0">
+                    <div className="flex items-center bg-white border border-neutral-200 rounded-lg">
                       <button
+                        type="button"
                         onClick={() => updateQuantity(item.food.id, -1)}
-                        className="w-6 h-6 rounded-lg bg-white text-stone-700 hover:bg-stone-200 text-xs font-bold flex items-center justify-center transition"
+                        className="px-1.5 py-1 text-neutral-600 hover:text-neutral-900"
                       >
                         <Minus className="w-3 h-3" />
                       </button>
-                      <span className="font-black text-xs text-[#201611] px-1 min-w-[16px] text-center">
-                        {item.quantity}
-                      </span>
+                      <span className="px-2 font-bold text-neutral-900">{item.quantity}</span>
                       <button
+                        type="button"
                         onClick={() => updateQuantity(item.food.id, 1)}
-                        className="w-6 h-6 rounded-lg bg-[#FF5722] text-white hover:bg-orange-600 text-xs font-bold flex items-center justify-center transition"
+                        className="px-1.5 py-1 text-neutral-600 hover:text-neutral-900"
                       >
                         <Plus className="w-3 h-3" />
                       </button>
                     </div>
 
+                    <span className="font-black text-neutral-900 w-12 text-right">
+                      ₹{item.food.price * item.quantity}
+                    </span>
+
                     <button
-                      onClick={() => removeFromCart(item.food.id)}
-                      className="text-stone-300 hover:text-red-500 p-1"
-                      title="Remove"
+                      type="button"
+                      onClick={() => removeItem(item.food.id)}
+                      className="p-1 text-neutral-400 hover:text-red-600"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </div>
-
-                  {/* Parcel Packaging Feature (+₹5) */}
-                  <div className="flex items-center justify-between bg-orange-50/60 border border-orange-100 rounded-xl px-2.5 py-1.5">
-                    <label className="flex items-center gap-1.5 text-[11px] font-bold text-stone-700 cursor-pointer select-none">
-                      <input
-                        type="checkbox"
-                        checked={item.isParcel}
-                        onChange={() => toggleParcel(item.food.id)}
-                        className="w-3.5 h-3.5 rounded text-[#FF5722] focus:ring-[#FF5722] border-stone-300 cursor-pointer"
-                      />
-                      <span>📦 Pack as Parcel (+₹5 each)</span>
-                    </label>
-                    <span className="text-[10px] font-black text-[#FF5722]">
-                      {item.isParcel ? `+₹${5 * item.quantity}` : 'Dine In'}
-                    </span>
-                  </div>
                 </div>
-              ))}
-
-              {cart.length === 0 && (
-                <div className="py-12 text-center text-stone-400 space-y-2">
-                  <ShoppingCart className="w-8 h-8 mx-auto text-stone-300 stroke-1" />
-                  <p className="text-xs font-bold text-stone-500">Bill is empty</p>
-                  <p className="text-[11px] text-stone-400">
-                    Click &ldquo;+ Add to Bill&rdquo; on any food card to start.
-                  </p>
-                </div>
-              )}
-            </div>
-
-            {/* Bill Summary & Cash Calculator */}
-            {cart.length > 0 && (
-              <div className="p-4 bg-stone-50 border-t border-stone-100 space-y-3">
-                <div className="space-y-1 text-xs">
-                  <div className="flex justify-between text-stone-600">
-                    <span>Items Subtotal</span>
-                    <span className="font-semibold">₹{subtotal}</span>
-                  </div>
-                  {parcelTotal > 0 && (
-                    <div className="flex justify-between text-orange-700 font-bold">
-                      <span>Parcel Packing Fee</span>
-                      <span>+₹{parcelTotal}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between items-baseline pt-2 border-t border-stone-200">
-                    <span className="font-black text-sm text-[#201611]">Total Cash Payable</span>
-                    <span className="text-2xl font-black text-[#FF5722]">₹{total}</span>
-                  </div>
-                </div>
-
-                {/* Cash Tender Assistant */}
-                <div className="pt-2 border-t border-stone-200/80 space-y-2">
-                  <div className="flex items-center justify-between text-[11px]">
-                    <span className="font-bold text-stone-600 flex items-center gap-1">
-                      <DollarSign className="w-3.5 h-3.5 text-stone-500" />
-                      Cash Tendered
-                    </span>
-                    {parsedCash > 0 && (
-                      <span className={`font-black px-2 py-0.5 rounded-md ${
-                        parsedCash >= total ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-700'
-                      }`}>
-                        {parsedCash >= total
-                          ? `Return Change: ₹${changeToReturn}`
-                          : `Short by: ₹${total - parsedCash}`}
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Quick Tender Buttons */}
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <button
-                      onClick={() => setCashTendered(total.toString())}
-                      className="px-2.5 py-1 rounded-lg bg-stone-200 hover:bg-stone-300 text-stone-700 text-[11px] font-bold transition"
-                    >
-                      Exact (₹{total})
-                    </button>
-                    {[50, 100, 200, 500].map((amt) => {
-                      if (amt < total && amt * 2 < total) return null;
-                      return (
-                        <button
-                          key={amt}
-                          onClick={() => setCashTendered(amt.toString())}
-                          className="px-2.5 py-1 rounded-lg bg-stone-200 hover:bg-stone-300 text-stone-700 text-[11px] font-bold transition"
-                        >
-                          ₹{amt}
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  {/* Cash input */}
-                  <input
-                    type="number"
-                    value={cashTendered}
-                    onChange={(e) => setCashTendered(e.target.value)}
-                    placeholder={`Enter cash given (default ₹${total})`}
-                    className="w-full px-3 py-2 text-xs bg-white border border-stone-300 rounded-xl font-bold"
-                  />
-                </div>
-
-                {/* Warning if cart has unavailable items */}
-                {cart.some((item) => {
-                  const liveFood = foods.find((f) => f.id === item.food.id);
-                  return liveFood ? !liveFood.isAvailable : false;
-                }) && (
-                  <div className="bg-red-50 border border-red-200 rounded-xl p-2.5 text-xs text-red-700 flex items-center gap-2">
-                    <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
-                    <span className="font-semibold text-[11px]">
-                      Your bill contains out-of-stock items. Please remove them before proceeding.
-                    </span>
-                  </div>
-                )}
-
-                {/* Single-Click Primary Action: Generate & Print Token */}
-                <button
-                  onClick={handleGenerateAndPrintToken}
-                  disabled={cart.some((item) => {
-                    const liveFood = foods.find((f) => f.id === item.food.id);
-                    return liveFood ? !liveFood.isAvailable : false;
-                  })}
-                  className="w-full py-3.5 bg-gradient-to-r from-[#FF5722] to-orange-600 hover:from-orange-600 hover:to-orange-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-black text-sm rounded-2xl shadow-lg shadow-orange-500/30 transition flex items-center justify-center gap-2 active:scale-98"
-                >
-                  <Printer className="w-4 h-4" />
-                  <span>⚡ Generate & Print Cash Token (₹{total})</span>
-                </button>
-                <p className="text-[10px] text-center text-stone-400">
-                  Single-click creates verified token in feed and brings up printable thermal slip.
-                </p>
-              </div>
+              ))
             )}
           </div>
+
+          {/* Financial Summary & Cash Given */}
+          {cart.length > 0 && (
+            <div className="pt-3 border-t border-neutral-200 space-y-3">
+              <div className="space-y-1 text-xs">
+                <div className="flex justify-between font-bold text-neutral-600">
+                  <span>Subtotal</span>
+                  <span>₹{subtotal}</span>
+                </div>
+                <div className="flex justify-between font-black text-base text-neutral-900 pt-1 border-t border-neutral-200">
+                  <span>Total Due</span>
+                  <span className="text-[#E23744]">₹{total}</span>
+                </div>
+              </div>
+
+              {/* Cash tendered quick buttons */}
+              <div className="space-y-1.5">
+                <label className="block text-[11px] font-bold text-neutral-600">
+                  Cash Received
+                </label>
+                <div className="grid grid-cols-4 gap-1.5">
+                  {[total, 100, 200, 500].map((amt) => (
+                    <button
+                      key={amt}
+                      type="button"
+                      onClick={() => setCashTendered(amt.toString())}
+                      className="py-1 rounded-lg bg-neutral-100 hover:bg-neutral-200 text-neutral-800 text-[11px] font-bold transition"
+                    >
+                      ₹{amt}
+                    </button>
+                  ))}
+                </div>
+                <input
+                  type="number"
+                  value={cashTendered}
+                  onChange={(e) => setCashTendered(e.target.value)}
+                  placeholder={`Cash received (₹${total})`}
+                  className="w-full px-3 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-xl font-bold"
+                />
+
+                {changeDue > 0 && (
+                  <div className="flex justify-between items-center px-3 py-2 bg-emerald-50 rounded-xl border border-emerald-200 text-emerald-800 text-xs font-bold">
+                    <span>Change to Return:</span>
+                    <span className="text-sm font-black">₹{changeDue}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Action: Generate Order & Print Thermal Bill */}
+              <button
+                type="button"
+                onClick={handleGenerateAndPrintSlip}
+                className="w-full py-3.5 bg-[#E23744] hover:bg-[#B91C2B] text-white font-black text-sm rounded-2xl shadow-lg shadow-red-500/20 transition flex items-center justify-center gap-2 active:scale-98"
+              >
+                <Printer className="w-4 h-4" />
+                <span>Print Bill & Send to Kitchen (₹{total})</span>
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* PRINTABLE THERMAL TOKEN SLIP MODAL */}
+      {/* THERMAL BILL RECEIPT MODAL (NO QR CODE, PURE SAKTHI MESS RECEIPT) */}
       {showSlipModal && completedOrder && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-3xl max-w-sm w-full shadow-2xl overflow-hidden border border-stone-200 animate-in fade-in zoom-in-95">
-            {/* Modal Top Bar (Non-print) */}
-            <div className="print:hidden px-4 py-3 bg-[#FAF8F5] border-b border-stone-200 flex items-center justify-between">
-              <div className="flex items-center gap-2 text-xs font-black text-stone-700">
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl max-w-sm w-full shadow-2xl overflow-hidden border border-neutral-200 animate-in fade-in zoom-in-95">
+            {/* Modal Top Bar */}
+            <div className="print:hidden px-4 py-3 bg-neutral-50 border-b border-neutral-200 flex items-center justify-between">
+              <div className="flex items-center gap-2 text-xs font-black text-neutral-800">
                 <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                <span>Token #{completedOrder.id} Generated</span>
+                <span>Order #{completedOrder.orderNumber || completedOrder.id} Created</span>
               </div>
               <button
+                type="button"
                 onClick={handleNextCustomer}
-                className="p-1 rounded-lg text-stone-400 hover:text-stone-700 hover:bg-stone-200"
+                className="p-1 rounded-lg text-neutral-400 hover:text-neutral-700 hover:bg-neutral-200"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            {/* TOKEN SLIP BODY (Small compact token matching customer panel) */}
-            <div id="thermal-receipt" className="p-5 bg-white text-stone-900 text-center space-y-3">
+            {/* RECEIPT SLIP BODY */}
+            <div id="thermal-receipt" className="p-6 bg-white text-neutral-900 text-center space-y-4">
               {/* Brand Header */}
-              <div className="flex items-center justify-between pb-2 border-b border-stone-200">
-                <BrandLogo size="sm" />
-                <span className="text-[10px] font-extrabold uppercase bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full border border-emerald-200">
-                  🟢 ACTIVE · CASH
-                </span>
+              <div className="flex flex-col items-center border-b border-dashed border-neutral-300 pb-3">
+                <BrandLogo size="md" />
+                <p className="text-[10px] text-neutral-500 font-semibold mt-1">
+                  Authentic South Indian Food Ordering
+                </p>
+                <p className="text-[10px] text-neutral-400">
+                  GSTIN: 33AAAAA0000A1Z5 · Ph: +91 98765 43210
+                </p>
               </div>
 
-              {/* Token Title & Number */}
-              <div>
-                <p className="text-[10px] font-extrabold text-[#FF5722] uppercase tracking-wider">
-                  Digital Food Token
+              {/* Order Number Box */}
+              <div className="bg-red-50/60 p-3 rounded-2xl border border-red-100">
+                <p className="text-[10px] font-extrabold text-[#E23744] uppercase tracking-wider">
+                  COUNTER ORDER
                 </p>
-                <h2 className="text-2xl font-black text-[#201611] tracking-tight mt-0.5">
-                  Token #{completedOrder.id}
+                <h2 className="text-2xl font-black text-neutral-900 tracking-tight mt-0.5">
+                  {completedOrder.orderNumber || `SM-${completedOrder.id}`}
                 </h2>
-                <p className="text-[10px] text-stone-400 font-semibold mt-0.5">
-                  {new Date(completedOrder.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} · {new Date(completedOrder.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                <p className="text-[10px] text-neutral-500 font-medium mt-0.5">
+                  {new Date(completedOrder.createdAt).toLocaleDateString('en-IN', {
+                    day: '2-digit',
+                    month: 'short',
+                    year: 'numeric',
+                  })}{' '}
+                  ·{' '}
+                  {new Date(completedOrder.createdAt).toLocaleTimeString('en-IN', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}
                 </p>
               </div>
 
-              {/* QR Code Container */}
-              <div className="relative mx-auto w-44 h-44 p-3 rounded-2xl bg-[#FFFDF9] border-2 border-stone-200 shadow-inner flex items-center justify-center">
-                <QRCodeSVG
-                  value={completedOrder.qrToken}
-                  size={150}
-                  level="H"
-                  includeMargin={false}
-                  fgColor="#201611"
-                />
-              </div>
-
-              {/* Counter Instruction */}
-              <div className="space-y-0.5">
-                <p className="text-xs font-bold text-[#201611]">
-                  Show this QR at the canteen counter.
-                </p>
-                <p className="text-[11px] text-[#5C4E46]">
-                  Server scans this token to verify and dispense your food.
-                </p>
-              </div>
-
-              {/* Compact Items Summary */}
-              <div className="bg-[#FAF8F5] rounded-2xl p-3 border border-stone-200 text-left space-y-1 text-xs">
-                <div className="flex justify-between items-center text-[10px] font-bold text-[#8C7E76] uppercase tracking-wider pb-1 border-b border-stone-200">
-                  <span>Items ({completedOrder.items.length})</span>
-                  <span className="text-emerald-700 font-extrabold">PAID CASH</span>
+              {/* Customer Info */}
+              <div className="text-left text-xs text-neutral-600 px-1 flex justify-between">
+                <div>
+                  <span className="font-bold text-neutral-800">Customer: </span>
+                  <span>{completedOrder.userName || customerName}</span>
                 </div>
-                <div className="divide-y divide-stone-200/50">
+                <div className="font-bold text-emerald-700 uppercase text-[11px]">
+                  CASH PAID
+                </div>
+              </div>
+
+              {/* Items Summary Table */}
+              <div className="bg-neutral-50 rounded-xl p-3 border border-neutral-200 text-left text-xs space-y-1.5">
+                <div className="flex justify-between items-center text-[10px] font-bold text-neutral-400 uppercase tracking-wider pb-1 border-b border-neutral-200">
+                  <span>Item</span>
+                  <span>Qty × Price</span>
+                  <span>Amount</span>
+                </div>
+                <div className="divide-y divide-neutral-200/50">
                   {completedOrder.items.map((item, idx) => (
-                    <div key={idx} className="py-1 flex justify-between">
-                      <span className="font-semibold text-[#201611] truncate max-w-[180px]">
-                        {item.name} <span className="text-stone-400 font-normal">×{item.quantity}</span>
+                    <div key={idx} className="py-1.5 flex justify-between items-center text-neutral-900">
+                      <span className="font-semibold truncate max-w-[130px]">
+                        {item.name}
                       </span>
-                      <span className="font-bold text-[#201611]">
+                      <span className="text-neutral-500 text-[11px]">
+                        {item.quantity} × ₹{item.price}
+                      </span>
+                      <span className="font-bold">
                         ₹{item.price * item.quantity}
                       </span>
                     </div>
                   ))}
-                  <div className="pt-1.5 flex justify-between font-extrabold text-xs text-[#201611]">
-                    <span>Total Paid</span>
-                    <span className="text-[#FF5722]">₹{completedOrder.total}</span>
+                </div>
+
+                <div className="pt-2 border-t border-neutral-200 space-y-1 text-xs">
+                  <div className="flex justify-between font-black text-sm text-neutral-900">
+                    <span>Total Amount</span>
+                    <span className="text-[#E23744]">₹{completedOrder.total}</span>
                   </div>
+                  {cashGivenAtPayment > completedOrder.total && (
+                    <div className="flex justify-between text-[11px] text-neutral-500 pt-0.5">
+                      <span>Cash Received: ₹{cashGivenAtPayment}</span>
+                      <span>Change: ₹{cashGivenAtPayment - completedOrder.total}</span>
+                    </div>
+                  )}
                 </div>
               </div>
 
-              <p className="text-[9px] text-stone-400 text-center font-sans pt-1">
-                Best Canteen · Cash POS Token #{completedOrder.id}
-              </p>
+              {/* Footer Notice */}
+              <div className="border-t border-dashed border-neutral-300 pt-3 text-[10px] text-neutral-400 space-y-0.5">
+                <p className="font-semibold text-neutral-600">
+                  Thank you for ordering at SAKTHI MESS!
+                </p>
+                <p>Order sent to kitchen for hot preparation.</p>
+              </div>
             </div>
 
-            {/* Modal Bottom Actions (Non-print) */}
-            <div className="print:hidden p-4 bg-[#FAF8F5] border-t border-stone-200 flex gap-2.5">
+            {/* Modal Bottom Actions */}
+            <div className="print:hidden p-4 bg-neutral-50 border-t border-neutral-200 flex gap-2.5">
               <button
+                type="button"
                 onClick={handlePrintSlip}
-                className="flex-1 py-3 bg-[#201611] hover:bg-stone-800 text-white font-bold text-xs rounded-2xl transition flex items-center justify-center gap-2 shadow-md active:scale-95"
+                className="flex-1 py-3 bg-neutral-900 hover:bg-neutral-800 text-white font-bold text-xs rounded-xl transition flex items-center justify-center gap-2 shadow-sm active:scale-95"
               >
                 <Printer className="w-4 h-4" />
-                <span>Print Token</span>
+                <span>Print Bill</span>
               </button>
               <button
+                type="button"
                 onClick={handleNextCustomer}
-                className="flex-1 py-3 bg-[#FF5722] hover:bg-orange-600 text-white font-bold text-xs rounded-2xl transition flex items-center justify-center gap-2 shadow-md active:scale-95"
+                className="flex-1 py-3 bg-[#E23744] hover:bg-[#B91C2B] text-white font-bold text-xs rounded-xl transition flex items-center justify-center gap-2 shadow-sm active:scale-95"
               >
                 <RefreshCw className="w-4 h-4" />
-                <span>Next Customer</span>
+                <span>Next Order</span>
               </button>
             </div>
           </div>

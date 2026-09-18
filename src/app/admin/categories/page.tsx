@@ -59,7 +59,7 @@ export default function AdminCategoriesPage() {
               <span className="text-3xl">{cat.icon}</span>
               <button
                 onClick={() => openEdit(cat)}
-                className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 p-1.5 rounded-xl bg-stone-100 hover:bg-orange-50 text-stone-500 hover:text-[#FF5722] transition"
+                className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 p-1.5 rounded-xl bg-stone-100 hover:bg-red-50 text-stone-500 hover:text-[#E23744] transition"
                 aria-label={`Edit ${cat.name}`}
               >
                 <Edit2 className="w-3.5 h-3.5" />
@@ -141,7 +141,7 @@ export default function AdminCategoriesPage() {
                 </button>
                 <button
                   onClick={handleSave}
-                  className="px-5 py-2 bg-[#FF5722] hover:bg-[#F4511E] text-white font-bold rounded-xl flex items-center gap-1.5"
+                  className="px-5 py-2 bg-[#E23744] hover:bg-[#B91C2B] text-white font-bold rounded-xl flex items-center gap-1.5"
                 >
                   <Check className="w-4 h-4" />
                   Save

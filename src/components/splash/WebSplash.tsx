@@ -16,59 +16,53 @@ export function WebSplash({ isVisible }: WebSplashProps) {
           initial={{ opacity: 1 }}
           exit={{
             opacity: 0,
-            transition: { duration: 0.5, ease: [0.4, 0, 0.2, 1] },
+            transition: { duration: 0.4, ease: [0.4, 0, 0.2, 1] },
           }}
-          className="fixed inset-0 z-50 hidden md:flex flex-col items-center justify-center w-screen h-screen overflow-hidden select-none"
-          style={{
-            backgroundColor: '#FFF9F1',
-            backgroundImage:
-              'radial-gradient(circle at center, #FFFFFF 0%, #FFF9F1 55%, #F7F1E7 100%)',
-          }}
+          className="fixed inset-0 z-50 flex flex-col items-center justify-center w-screen h-screen overflow-hidden select-none bg-white"
         >
           {/* Subtle warm ambient ring */}
-          <div className="absolute w-[480px] h-[480px] rounded-full bg-gradient-to-tr from-amber-100/30 via-orange-100/20 to-transparent blur-3xl pointer-events-none" />
+          <div className="absolute w-[450px] h-[450px] rounded-full bg-rose-50/60 blur-3xl pointer-events-none" />
 
-          {/* Centered Brand & Loader Group */}
+          {/* Centered Brand & Loader */}
           <div className="relative z-10 flex flex-col items-center justify-center text-center">
-            {/* 100ms: Official Best Canteen Icon (80-105px tablet, 90-120px desktop) */}
             <motion.div
-              initial={{ opacity: 0, scale: 0.94 }}
+              initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
-              transition={{ delay: 0.1, duration: 0.45, ease: 'easeOut' }}
-              className="relative w-24 h-24 sm:w-28 sm:h-28 md:w-28 md:h-28 lg:w-32 lg:h-32 drop-shadow-xs"
+              transition={{ duration: 0.35, ease: 'easeOut' }}
+              className="relative w-28 h-28 sm:w-32 sm:h-32 rounded-full overflow-hidden shadow-card border border-stone-100"
             >
               <Image
                 src="/logo-icon.png"
-                alt="Best Canteen"
+                alt="SAKTHI MESS"
                 fill
-                sizes="(min-width: 1024px) 128px, 112px"
+                sizes="128px"
                 priority
                 className="object-contain"
               />
             </motion.div>
 
-            {/* 300ms: Brand Typography: BEST CANTEEN in single line (Black & Orange) */}
+            {/* Brand Typography: SAKTHI MESS */}
             <motion.div
               initial={{ opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.3, duration: 0.45, ease: 'easeOut' }}
-              className="mt-4 sm:mt-5 flex items-baseline font-brand tracking-tight leading-none"
+              transition={{ delay: 0.15, duration: 0.35, ease: 'easeOut' }}
+              className="mt-5 flex items-baseline tracking-tight leading-none font-black"
             >
-              <span className="text-3xl sm:text-4xl lg:text-[42px] font-black text-[#111111]">
-                BEST
+              <span className="text-3xl sm:text-4xl text-[#1C1C1C]">
+                SAKTHI
               </span>
-              <span className="text-3xl sm:text-4xl lg:text-[42px] font-black text-[#FF5722] ml-2 sm:ml-2.5">
-                CANTEEN
+              <span className="text-3xl sm:text-4xl text-[#E23744] ml-2">
+                MESS
               </span>
             </motion.div>
 
-            {/* 500ms: Smooth Animated Loading Dots (. -> .. -> ...) */}
+            {/* Animated Loading Dots (. .. ...) */}
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              transition={{ delay: 0.5, duration: 0.35 }}
-              className="mt-6 sm:mt-7 flex items-center justify-center gap-2 h-4"
-              aria-label="Loading application"
+              transition={{ delay: 0.25, duration: 0.3 }}
+              className="mt-6 flex items-center justify-center gap-2 h-4"
+              aria-label="Loading SAKTHI MESS"
             >
               <motion.span
                 animate={{
@@ -77,11 +71,11 @@ export function WebSplash({ isVisible }: WebSplashProps) {
                 }}
                 transition={{
                   repeat: Infinity,
-                  duration: 1.2,
+                  duration: 1,
                   delay: 0,
                   ease: 'easeInOut',
                 }}
-                className="w-2.5 h-2.5 rounded-full bg-[#FF5A1F]"
+                className="w-2.5 h-2.5 rounded-full bg-[#E23744]"
               />
               <motion.span
                 animate={{
@@ -90,11 +84,11 @@ export function WebSplash({ isVisible }: WebSplashProps) {
                 }}
                 transition={{
                   repeat: Infinity,
-                  duration: 1.2,
-                  delay: 0.25,
+                  duration: 1,
+                  delay: 0.2,
                   ease: 'easeInOut',
                 }}
-                className="w-2.5 h-2.5 rounded-full bg-[#FF5A1F]"
+                className="w-2.5 h-2.5 rounded-full bg-[#E23744]"
               />
               <motion.span
                 animate={{
@@ -103,11 +97,11 @@ export function WebSplash({ isVisible }: WebSplashProps) {
                 }}
                 transition={{
                   repeat: Infinity,
-                  duration: 1.2,
-                  delay: 0.5,
+                  duration: 1,
+                  delay: 0.4,
                   ease: 'easeInOut',
                 }}
-                className="w-2.5 h-2.5 rounded-full bg-[#FF5A1F]"
+                className="w-2.5 h-2.5 rounded-full bg-[#E23744]"
               />
             </motion.div>
           </div>

@@ -1,331 +1,208 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useMemo } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCanteen } from '@/context/CanteenContext';
 import { useAuth } from '@/context/AuthContext';
+import { useCart } from '@/context/CartContext';
 import {
   ArrowRight,
-  ShieldCheck,
-  Zap,
-  Sparkles,
-  QrCode,
-  CreditCard,
-  Utensils,
-  CheckCircle2,
+  Search,
+  Bike,
   Clock,
-  ChevronRight,
+  Sparkles,
   Flame,
+  ShieldCheck,
+  Utensils,
+  ShoppingBag,
+  Star,
+  CheckCircle2,
+  ChefHat,
+  Heart,
+  ShoppingCart,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { BrandLogo } from '@/components/common/BrandLogo';
+import { FoodCard } from '@/components/customer/FoodCard';
 
 export default function LandingPage() {
   const router = useRouter();
-  const { user, role, isLoaded } = useAuth();
-  const { foods, activeMealInfo } = useCanteen();
+  const { user, role, loginAs } = useAuth();
+  const { foods, categories, activeMealInfo, restaurantConfig } = useCanteen();
+  const { totalItems } = useCart();
 
-  const [checkingAuth, setCheckingAuth] = React.useState(true);
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState(false);
-  const redirectTriggeredRef = React.useRef(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
 
-  React.useEffect(() => {
-    if (redirectTriggeredRef.current) return;
-
-    let savedRole: string | null = null;
-    let savedUser: string | null = null;
-    try {
-      savedRole = localStorage.getItem('bc_user_role');
-      savedUser = localStorage.getItem('bc_custom_user');
-    } catch {}
-
-    const loggedIn = !!(savedRole && savedUser) || (isLoaded && !!user);
-
-    if (loggedIn) {
-      redirectTriggeredRef.current = true;
-      const activeRole = savedRole || role || user?.role || 'customer';
-      const destination =
-        activeRole === 'admin'
-          ? '/admin/dashboard'
-          : activeRole === 'server'
-          ? '/server/dashboard'
-          : '/customer/home';
-
-      // Logged in: Route directly to Dashboard
-      router.replace(destination);
-    } else if (isLoaded || (!savedRole && !savedUser)) {
-      // Guest / Not logged in: reveal landing page immediately
-      setCheckingAuth(false);
+  const handleSearchSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (searchQuery.trim()) {
+      router.push(`/customer/search?q=${encodeURIComponent(searchQuery.trim())}`);
+    } else {
+      router.push('/customer/menu');
     }
-  }, [isLoaded, user, role, router]);
+  };
 
-  // WHILE CHECKING AUTH (or redirecting to dashboard if logged in):
-  // Render high-priority splash screen image on mobile and clean branding on desktop
-  if (checkingAuth) {
-    return (
-      <div className="fixed inset-0 z-50 overflow-hidden bg-[#FDFBF7]">
-        {/* Mobile: Full-screen high-priority splash artwork */}
-        <div className="md:hidden fixed inset-0">
-          <Image
-            src="/splash-bg.png"
-            alt="Best Canteen Splash Screen"
-            fill
-            priority
-            sizes="100vw"
-            className="object-cover select-none pointer-events-none"
-            quality={95}
-          />
-        </div>
+  // Popular items
+  const popularFoods = useMemo(() => {
+    return foods.filter((f) => f.isVisible && f.isPopular);
+  }, [foods]);
 
-        {/* Desktop / Tablet: Centered Brand Logo */}
-        <div className="hidden md:flex fixed inset-0 flex-col items-center justify-center gap-4 bg-[#FFF9F1]">
-          <BrandLogo size="lg" />
-        </div>
+  // Today's Specials
+  const specials = useMemo(() => {
+    return foods.filter((f) => f.isVisible && (f.isFeatured || f.rating >= 4.8));
+  }, [foods]);
 
-        {/* Bottom correct alignment: .... for loading (clean bouncing dots, no 'Loading...' text) */}
-        <div className="absolute bottom-12 inset-x-0 z-20 flex items-center justify-center pointer-events-none">
-          <div className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-white/90 backdrop-blur-md border border-stone-200/80 shadow-lg">
-            <span className="w-2.5 h-2.5 rounded-full bg-[#FF5722] animate-bounce [animation-delay:-0.3s]" />
-            <span className="w-2.5 h-2.5 rounded-full bg-[#FF5722] animate-bounce [animation-delay:-0.2s]" />
-            <span className="w-2.5 h-2.5 rounded-full bg-[#FF5722] animate-bounce [animation-delay:-0.1s]" />
-            <span className="w-2.5 h-2.5 rounded-full bg-[#FF5722] animate-bounce" />
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  const steps = [
-    {
-      step: '01',
-      title: 'Choose',
-      desc: 'Browse fresh morning tiffin, lunch meals, evening snacks, and drinks.',
-      icon: Utensils,
-    },
-    {
-      step: '02',
-      title: 'Pay Securely',
-      desc: 'Pay in seconds with Razorpay via UPI (GPay/PhonePe), cards, or netbanking.',
-      icon: CreditCard,
-    },
-    {
-      step: '03',
-      title: 'Get QR Token',
-      desc: 'Instant cryptographic digital food token generated on your phone screen.',
-      icon: QrCode,
-    },
-    {
-      step: '04',
-      title: 'Collect Food',
-      desc: 'Show QR at the counter. Server scans and serves your steaming hot food.',
-      icon: CheckCircle2,
-    },
-  ];
+  // Filtered by selected category chip
+  const filteredFoods = useMemo(() => {
+    if (selectedCategory === 'all') return foods.filter((f) => f.isVisible);
+    return foods.filter((f) => {
+      if (!f.isVisible) return false;
+      return f.category === selectedCategory || f.availableMeals.includes(selectedCategory as any);
+    });
+  }, [foods, selectedCategory]);
 
   return (
-    <div className="min-h-screen bg-[#FDFBF7] text-[#201611]">
-      {/* Navigation */}
-      <header className="sticky top-0 z-40 bg-[#FDFBF7]/95 backdrop-blur-md border-b border-stone-200/80">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-[76px] md:h-[82px] flex items-center justify-between gap-4">
-          {/* Official Best Canteen Logo Container */}
-          <Link
-            href="/"
-            className="flex items-center py-1 group focus:outline-none focus:ring-2 focus:ring-[#FF5722]/30 rounded-xl transition-transform hover:scale-[1.01]"
-            aria-label="Best Canteen Home"
-          >
+    <div className="min-h-screen bg-white text-[#1C1C1C]">
+      {/* 1. Header Navigation */}
+      <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-[#E8E8E8]">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-[74px] flex items-center justify-between gap-4">
+          {/* Brand Logo */}
+          <Link href="/" className="flex items-center group">
             <BrandLogo size="md" />
           </Link>
 
-          {/* Desktop Navigation Links */}
-          <nav className="hidden md:flex items-center gap-7 lg:gap-9 text-xs sm:text-sm font-semibold text-[#5C4E46]">
-            <a href="#how-it-works" className="hover:text-[#FF5722] transition-colors py-1">How It Works</a>
-            <Link href="/login?redirect=/customer/menu" className="hover:text-[#FF5722] transition-colors py-1">Menu</Link>
-            <a href="#stats" className="hover:text-[#FF5722] transition-colors py-1">Campus Features</a>
-          </nav>
-
-          {/* Right Action Buttons */}
-          <div className="hidden sm:flex items-center gap-3 md:gap-4">
-            <Link
-              href="/login"
-              className="text-xs sm:text-sm font-bold text-[#5C4E46] hover:text-[#201611] px-3.5 py-2.5 rounded-xl transition hover:bg-stone-100/70"
-            >
-              Log in
-            </Link>
-            <Link
-              href="/login"
-              className="px-5 py-2.5 sm:px-6 sm:py-3 bg-[#FF5722] hover:bg-[#F4511E] text-white text-xs sm:text-sm font-bold rounded-2xl shadow-[0_4px_16px_rgba(255,87,34,0.3)] transition active:scale-95 flex items-center gap-1.5 shrink-0"
-            >
-              <span>Order Now</span>
-              <ArrowRight className="w-4 h-4" />
-            </Link>
+          {/* Quick Search on Desktop */}
+          <div className="hidden md:flex flex-1 max-w-md mx-4">
+            <form onSubmit={handleSearchSubmit} className="relative w-full">
+              <Search className="w-4 h-4 text-[#696969] absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search 'Biryani', 'Dosa', 'Parotta'..."
+                className="w-full pl-10 pr-4 py-2 text-xs bg-[#F8F8F8] border border-[#E8E8E8] rounded-2xl focus:bg-white focus:border-[#E23744] focus:outline-none transition"
+              />
+            </form>
           </div>
 
-          {/* Mobile Right: Hamburger Button */}
-          <div className="flex sm:hidden items-center gap-2">
+          {/* Nav Actions */}
+          <div className="flex items-center gap-2 sm:gap-3">
             <Link
-              href="/login"
-              className="px-3.5 py-2 bg-[#FF5722] text-white text-xs font-bold rounded-xl shadow-xs"
+              href="/customer/menu"
+              className="px-3.5 py-2 rounded-xl text-xs font-bold text-[#696969] hover:text-[#1C1C1C] hover:bg-stone-50 transition"
+            >
+              Menu
+            </Link>
+
+            <Link
+              href="/customer/orders"
+              className="hidden sm:inline-flex px-3.5 py-2 rounded-xl text-xs font-bold text-[#696969] hover:text-[#1C1C1C] hover:bg-stone-50 transition"
+            >
+              Orders
+            </Link>
+
+            <Link
+              href="/customer/cart"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[#FFF1F2] hover:bg-rose-100 text-[#E23744] font-bold text-xs transition active:scale-95"
+            >
+              <ShoppingCart className="w-4 h-4" />
+              <span className="hidden sm:inline">Cart</span>
+              {totalItems > 0 && (
+                <span className="bg-[#E23744] text-white text-[10px] font-black px-1.5 py-0.2 rounded-full">
+                  {totalItems}
+                </span>
+              )}
+            </Link>
+
+            <Link
+              href="/customer/menu"
+              className="px-4 py-2 rounded-2xl bg-[#E23744] hover:bg-[#B91C2B] text-white font-extrabold text-xs shadow-xs transition active:scale-95"
             >
               Order Now
             </Link>
-            <button
-              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-              className="p-2 text-[#201611] hover:text-[#FF5722] hover:bg-stone-100 rounded-xl transition"
-              aria-label="Toggle Menu"
-            >
-              {isMobileMenuOpen ? (
-                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              ) : (
-                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                </svg>
-              )}
-            </button>
           </div>
         </div>
-
-        {/* Mobile Navigation Drawer */}
-        {isMobileMenuOpen && (
-          <div className="sm:hidden bg-[#FDFBF7] border-b border-stone-200 px-6 py-5 shadow-xl space-y-4 animate-fadeIn">
-            <nav className="flex flex-col space-y-2.5 font-bold text-sm text-[#201611]">
-              <a
-                href="#how-it-works"
-                onClick={() => setIsMobileMenuOpen(false)}
-                className="py-2 hover:text-[#FF5722] border-b border-stone-100"
-              >
-                How It Works
-              </a>
-              <a
-                href="#menu-preview"
-                onClick={() => setIsMobileMenuOpen(false)}
-                className="py-2 hover:text-[#FF5722] border-b border-stone-100"
-              >
-                Menu Preview
-              </a>
-              <a
-                href="#stats"
-                onClick={() => setIsMobileMenuOpen(false)}
-                className="py-2 hover:text-[#FF5722] border-b border-stone-100"
-              >
-                Campus Stats
-              </a>
-            </nav>
-
-            <div className="pt-2 flex flex-col gap-2">
-              <Link
-                href="/login"
-                onClick={() => setIsMobileMenuOpen(false)}
-                className="w-full py-2.5 text-center text-xs font-bold text-[#5C4E46] border border-stone-200 rounded-xl bg-white"
-              >
-                Log in
-              </Link>
-              <Link
-                href="/login"
-                onClick={() => setIsMobileMenuOpen(false)}
-                className="w-full py-3 bg-[#FF5722] text-white text-center text-xs font-bold rounded-xl shadow-md flex items-center justify-center gap-1.5"
-              >
-                <span>Order Now</span>
-                <ArrowRight className="w-4 h-4" />
-              </Link>
-            </div>
-          </div>
-        )}
       </header>
 
-      {/* Hero Section */}
-      <section className="relative pt-8 pb-16 sm:pt-16 sm:pb-24 overflow-hidden">
+      {/* 2. Main Hero Section */}
+      <section className="relative overflow-hidden bg-gradient-to-b from-[#FFF1F2]/50 via-white to-white pt-8 pb-12 sm:pt-14 sm:pb-16 border-b border-stone-100">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center">
-            {/* Left Copy */}
-            <div className="lg:col-span-7 space-y-6 text-center lg:text-left">
-              <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-orange-100/80 text-[#FF5722] text-xs font-bold border border-orange-200 shadow-2xs">
-                <Sparkles className="w-4 h-4" />
-                <span>Next-Gen Campus Canteen Experience</span>
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+            {/* Left Content */}
+            <div className="lg:col-span-7 space-y-5 text-center lg:text-left">
+              <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white border border-rose-200 text-[#E23744] shadow-xs text-xs font-extrabold">
+                <Bike className="w-3.5 h-3.5 text-[#2E9B5B]" />
+                <span>Doorstep Delivery in {restaurantConfig.estimatedDeliveryTimeRange} · Hot & Fresh</span>
               </div>
 
-              <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black text-[#201611] tracking-tight leading-[1.1]">
-                Good Food · <br />
-                <span className="text-[#FF5722]">Brighter Days</span>
+              <h1 className="text-3xl sm:text-5xl lg:text-6xl font-black text-[#1C1C1C] tracking-tight leading-[1.1]">
+                GOOD FOOD. <br />
+                <span className="text-[#E23744]">DELIVERED TO YOU.</span>
               </h1>
 
-              <p className="text-base sm:text-lg text-[#5C4E46] max-w-xl mx-auto lg:mx-0 leading-relaxed">
-                Order your favourite canteen meals online, pay securely with Razorpay,
-                receive an instant digital QR token, and pick up your piping hot food with zero token queue.
+              <p className="text-sm sm:text-base text-[#696969] max-w-xl mx-auto lg:mx-0 font-medium leading-relaxed">
+                Order your favourite traditional meals, biryanis, and tiffin specials from{' '}
+                <strong className="text-[#1C1C1C]">SAKTHI MESS</strong> and receive them hot at your
+                doorstep.
               </p>
 
-              {/* Action Buttons */}
-              <div className="flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-3 sm:gap-4 pt-2">
-                <Link
-                  href="/login"
-                  className="w-full sm:w-auto px-8 py-4 bg-[#FF5722] hover:bg-[#F4511E] text-white font-extrabold text-sm sm:text-base rounded-2xl shadow-[0_8px_25px_rgba(255,87,34,0.35)] transition flex items-center justify-center gap-2 active:scale-95"
+              {/* Search Bar in Hero */}
+              <form
+                onSubmit={handleSearchSubmit}
+                className="max-w-xl mx-auto lg:mx-0 flex items-center bg-white p-2 rounded-3xl border border-[#E8E8E8] shadow-card focus-within:border-[#E23744] focus-within:ring-2 focus-within:ring-rose-100 transition"
+              >
+                <div className="pl-3 pr-2 text-[#696969]">
+                  <Search className="w-5 h-5" />
+                </div>
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search for dishes, meals or categories (e.g. 'Biryani', 'Dosa')"
+                  className="flex-1 py-2 text-xs sm:text-sm text-[#1C1C1C] bg-transparent focus:outline-none"
+                />
+                <button
+                  type="submit"
+                  className="px-5 py-2.5 rounded-2xl bg-[#E23744] hover:bg-[#B91C2B] text-white font-extrabold text-xs sm:text-sm shadow-xs transition shrink-0"
                 >
-                  <span>Start Ordering</span>
-                  <ArrowRight className="w-5 h-5" />
-                </Link>
+                  Search
+                </button>
+              </form>
 
-                <Link
-                  href="/login"
-                  className="w-full sm:w-auto px-6 py-4 bg-white hover:bg-stone-50 border border-stone-200 text-[#201611] font-bold text-sm sm:text-base rounded-2xl shadow-2xs transition flex items-center justify-center gap-2"
-                >
-                  <span>Login</span>
-                  <ChevronRight className="w-4 h-4 text-stone-400" />
-                </Link>
-              </div>
-
-              {/* Active Serving Live Pill */}
-              <div className="pt-2 inline-flex items-center gap-3 bg-white/80 backdrop-blur-sm px-4 py-2 rounded-2xl border border-stone-200/80 shadow-2xs text-xs font-semibold text-[#201611]">
-                <span className="w-2.5 h-2.5 rounded-full bg-[#16A34A] animate-pulse" />
-                <span>{activeMealInfo.icon} {activeMealInfo.name} Menu is live right now · {activeMealInfo.statusText}</span>
+              {/* Suggested Quick Tags */}
+              <div className="flex items-center justify-center lg:justify-start gap-2 flex-wrap text-xs text-[#696969] pt-1">
+                <span className="font-bold">Popular:</span>
+                {['Biryani', 'Bun Parotta', 'Chicken Chukka', 'Meals', 'Ghee Roast'].map((tag) => (
+                  <button
+                    key={tag}
+                    onClick={() => router.push(`/customer/search?q=${encodeURIComponent(tag)}`)}
+                    className="px-2.5 py-1 rounded-xl bg-stone-100 hover:bg-stone-200 text-[#1C1C1C] font-semibold text-xs transition"
+                  >
+                    {tag}
+                  </button>
+                ))}
               </div>
             </div>
 
-            {/* Right Hero Visual: Authentic Chicken Biryani Hero Card */}
-            <div className="lg:col-span-5 flex items-center justify-center lg:justify-end">
-              <div className="relative w-full max-w-[420px] sm:max-w-[480px] lg:max-w-[500px] aspect-square rounded-[32px] overflow-hidden shadow-[0_20px_50px_rgba(32,22,17,0.16)] group">
-                {/* Hero Biryani Image — No visible border */}
+            {/* Right Hero Visual */}
+            <div className="lg:col-span-5 relative flex justify-center">
+              <div className="relative w-72 h-72 sm:w-96 sm:h-96 rounded-3xl overflow-hidden shadow-2xl border-4 border-white bg-neutral-900 group">
                 <Image
-                  src="/hero-biryani.png"
-                  alt="Authentic Chicken Biryani"
+                  src="/land-image-1.png"
+                  alt="SAKTHI MESS Signature Dish"
                   fill
                   priority
-                  className="object-cover transition-transform duration-700 group-hover:scale-105"
-                  sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 500px"
+                  className="object-cover group-hover:scale-105 transition-transform duration-500"
                 />
-
-                {/* Subtle natural lighting vignette */}
-                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-transparent pointer-events-none" />
-
-                {/* Top Rating Badge */}
-                <div className="absolute top-4 right-4 bg-white/90 backdrop-blur-md px-3 py-1.5 rounded-full shadow-md flex items-center gap-1.5 text-xs font-black text-[#201611]">
-                  <span className="text-amber-500">★</span>
-                  <span>4.7</span>
-                  <span className="text-[10px] text-stone-400 font-medium">(500+)</span>
-                </div>
-
-                {/* Bottom Floating Translucent Information Panel */}
-                <div className="absolute bottom-4 left-4 right-4 bg-white/95 backdrop-blur-md rounded-2xl p-4 shadow-[0_8px_30px_rgba(0,0,0,0.12)] border border-white/60 flex items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-base">⚡</span>
-                      <h3 className="font-extrabold text-sm sm:text-base text-[#201611] truncate">
-                        Smart Canteen Token System
-                      </h3>
-                    </div>
-                    <p className="text-[11px] text-[#5C4E46] mt-0.5 truncate font-medium">
-                      Instant Digital QR Tokens · Fast Collection
-                    </p>
-                  </div>
-
-                  <Link
-                    href="/login"
-                    className="px-5 py-2.5 bg-[#FF5722] hover:bg-[#F4511E] text-white font-extrabold text-xs sm:text-sm rounded-xl shadow-[0_4px_15px_rgba(255,87,34,0.35)] transition flex items-center gap-1 active:scale-95 shrink-0"
-                  >
-                    <span>Order Now</span>
-                  </Link>
+                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent p-5 text-white">
+                  <p className="text-xs font-bold text-amber-400 uppercase tracking-wider">
+                    Mess Signature Feast
+                  </p>
+                  <p className="text-lg font-black mt-0.5">Authentic South Indian Taste</p>
+                  <p className="text-xs text-neutral-300">Prepared hot & fresh with authentic village spices</p>
                 </div>
               </div>
             </div>
@@ -333,124 +210,184 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Platform Capabilities Section */}
-      <section id="stats" className="py-12 bg-white border-y border-stone-200/80">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-6 text-center">
-            <div className="space-y-1">
-              <p className="text-2xl sm:text-3xl font-black text-[#FF5722]">Instant</p>
-              <p className="text-xs sm:text-sm font-bold text-[#201611]">QR Food Tokens</p>
-              <p className="text-[11px] text-[#8C7E76]">Generated on payment</p>
-            </div>
-            <div className="space-y-1">
-              <p className="text-2xl sm:text-3xl font-black text-[#FF5722]">Live</p>
-              <p className="text-xs sm:text-sm font-bold text-[#201611]">Meal Schedules</p>
-              <p className="text-[11px] text-[#8C7E76]">Breakfast to dinner</p>
-            </div>
-            <div className="space-y-1">
-              <p className="text-2xl sm:text-3xl font-black text-[#16A34A]">Direct</p>
-              <p className="text-xs sm:text-sm font-bold text-[#201611]">Counter Collection</p>
-              <p className="text-[11px] text-[#8C7E76]">Fast token scanning</p>
-            </div>
-            <div className="space-y-1">
-              <p className="text-2xl sm:text-3xl font-black text-[#201611]">100%</p>
-              <p className="text-xs sm:text-sm font-bold text-[#201611]">Cashless Billing</p>
-              <p className="text-[11px] text-[#8C7E76]">Powered by Razorpay</p>
-            </div>
+      {/* 3. Popular Categories Section */}
+      <section className="py-10 sm:py-12 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="flex items-center justify-between mb-5">
+          <div>
+            <h2 className="text-xl sm:text-2xl font-black text-[#1C1C1C] tracking-tight">
+              Popular Categories
+            </h2>
+            <p className="text-xs text-[#696969] mt-0.5">Explore our wide variety of mess dishes</p>
           </div>
+          <Link
+            href="/customer/menu"
+            className="text-xs font-bold text-[#E23744] hover:underline inline-flex items-center gap-1"
+          >
+            <span>View All</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </Link>
+        </div>
+
+        {/* Categories Grid / Horizontal Scroll */}
+        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-11 gap-3">
+          <button
+            onClick={() => setSelectedCategory('all')}
+            className={`p-3 rounded-2xl border text-center transition flex flex-col items-center justify-center gap-1.5 ${
+              selectedCategory === 'all'
+                ? 'bg-[#E23744] text-white border-[#E23744] shadow-xs'
+                : 'bg-[#F8F8F8] border-[#E8E8E8] text-[#1C1C1C] hover:bg-stone-100'
+            }`}
+          >
+            <span className="text-2xl">🍽️</span>
+            <span className="text-[11px] font-black">All</span>
+          </button>
+
+          {categories.map((cat) => {
+            const isSelected = selectedCategory === cat.id;
+            return (
+              <button
+                key={cat.id}
+                onClick={() => setSelectedCategory(cat.id)}
+                className={`p-3 rounded-2xl border text-center transition flex flex-col items-center justify-center gap-1.5 ${
+                  isSelected
+                    ? 'bg-[#E23744] text-white border-[#E23744] shadow-xs'
+                    : 'bg-[#F8F8F8] border-[#E8E8E8] text-[#1C1C1C] hover:bg-stone-100'
+                }`}
+              >
+                <span className="text-2xl">{cat.icon}</span>
+                <span className="text-[11px] font-black truncate max-w-[70px]">{cat.name}</span>
+              </button>
+            );
+          })}
         </div>
       </section>
 
-      {/* How It Works (4 Steps) */}
-      <section id="how-it-works" className="py-16 sm:py-24 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-12">
-        <div className="text-center space-y-3 max-w-2xl mx-auto">
-          <p className="text-xs font-bold text-[#FF5722] uppercase tracking-wider">
-            Simple 4-Step Process
-          </p>
-          <h2 className="text-3xl sm:text-4xl font-extrabold text-[#201611] tracking-tight">
-            How Best Canteen Works
+      {/* 4. Popular Near You / Filtered Menu */}
+      <section className="py-8 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h2 className="text-xl sm:text-2xl font-black text-[#1C1C1C] tracking-tight flex items-center gap-2">
+              <Flame className="w-5 h-5 text-[#E23744]" />
+              Popular Near You
+            </h2>
+            <p className="text-xs text-[#696969] mt-0.5">Most loved dishes ordered for doorstep delivery</p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
+          {filteredFoods.slice(0, 8).map((food) => (
+            <FoodCard key={food.id} food={food} />
+          ))}
+        </div>
+      </section>
+
+      {/* 5. Today's Specials */}
+      {specials.length > 0 && (
+        <section className="py-10 bg-[#F8F8F8] border-y border-[#E8E8E8]">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h2 className="text-xl sm:text-2xl font-black text-[#1C1C1C] tracking-tight flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-amber-500" />
+                  Today's Specials
+                </h2>
+                <p className="text-xs text-[#696969] mt-0.5">Chef recommended signature dishes</p>
+              </div>
+              <Link
+                href="/customer/menu"
+                className="text-xs font-bold text-[#E23744] hover:underline inline-flex items-center gap-1"
+              >
+                <span>Full Menu</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </Link>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+              {specials.slice(0, 3).map((food) => (
+                <FoodCard key={food.id} food={food} />
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* 6. Why SAKTHI MESS? */}
+      <section className="py-14 sm:py-16 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="text-center max-w-2xl mx-auto mb-10">
+          <h2 className="text-2xl sm:text-3xl font-black text-[#1C1C1C] tracking-tight">
+            Why SAKTHI MESS?
           </h2>
-          <p className="text-xs sm:text-sm text-[#5C4E46]">
-            Say goodbye to paper tokens and long queues. Everything is handled digitally.
+          <p className="text-xs sm:text-sm text-[#696969] mt-1">
+            Experience authentic South Indian flavours with modern online convenience
           </p>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-          {steps.map((item) => {
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+          {[
+            {
+              icon: Clock,
+              title: 'Fast Preparation',
+              desc: 'Hot meals cooked fresh to order in 15–20 minutes without delays.',
+              color: 'text-amber-600 bg-amber-50',
+            },
+            {
+              icon: Sparkles,
+              title: 'Fresh Food',
+              desc: 'Traditional home-ground masalas and authentic recipes served hot.',
+              color: 'text-emerald-600 bg-emerald-50',
+            },
+            {
+              icon: Utensils,
+              title: 'Easy Ordering',
+              desc: 'Browse, customize instructions, pay securely, and track live.',
+              color: 'text-blue-600 bg-blue-50',
+            },
+            {
+              icon: Bike,
+              title: 'Doorstep Delivery',
+              desc: 'Dedicated delivery staff bringing warm food directly to your address.',
+              color: 'text-[#E23744] bg-[#FFF1F2]',
+            },
+          ].map((item, idx) => {
             const Icon = item.icon;
             return (
               <div
-                key={item.step}
-                className="bg-white rounded-3xl p-6 border border-stone-200/80 shadow-xs hover:shadow-md transition relative group"
+                key={idx}
+                className="bg-white p-6 rounded-3xl border border-[#E8E8E8] shadow-xs hover:shadow-card-hover transition space-y-3"
               >
-                <span className="text-3xl font-black text-stone-200 group-hover:text-orange-200 transition">
-                  {item.step}
-                </span>
-                <div className="w-12 h-12 rounded-2xl bg-orange-50 text-[#FF5722] flex items-center justify-center my-4 group-hover:scale-110 transition-transform">
+                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${item.color}`}>
                   <Icon className="w-6 h-6" />
                 </div>
-                <h3 className="text-lg font-bold text-[#201611] mb-1">
-                  {item.title}
-                </h3>
-                <p className="text-xs text-[#5C4E46] leading-relaxed">
-                  {item.desc}
-                </p>
+                <h3 className="text-base font-black text-[#1C1C1C]">{item.title}</h3>
+                <p className="text-xs text-[#696969] leading-relaxed">{item.desc}</p>
               </div>
             );
           })}
         </div>
       </section>
 
-      {/* Menu CTA Section (Requires Login to View) */}
-      <section className="py-16 bg-[#FAF8F5] border-t border-stone-200/80">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center space-y-6">
-          <div className="space-y-2">
-            <p className="text-xs font-bold text-[#FF5722] uppercase tracking-wider">
-              Fresh & Affordable Canteen Food
-            </p>
-            <h2 className="text-2xl sm:text-3xl font-extrabold text-[#201611] tracking-tight">
-              Ready to Taste Campus Specials?
-            </h2>
-            <p className="text-xs sm:text-sm text-[#5C4E46] max-w-lg mx-auto">
-              Sign in to explore the live 50+ dishes menu, customize meals, and generate instant digital collection QR tokens.
-            </p>
-          </div>
-
-          <div className="pt-2">
-            <Link
-              href="/login?redirect=/customer/menu"
-              className="inline-flex items-center gap-2 px-8 py-4 bg-[#FF5722] hover:bg-[#F4511E] text-white font-extrabold text-sm sm:text-base rounded-2xl shadow-[0_8px_25px_rgba(255,87,34,0.35)] transition active:scale-95"
-            >
-              <span>Explore Full 50+ Items Menu</span>
-              <ArrowRight className="w-5 h-5" />
-            </Link>
-          </div>
-        </div>
-      </section>
-
-      {/* Footer */}
-      <footer className="bg-[#201611] text-[#EFEAE0] py-12">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8">
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 border-b border-stone-800 pb-8">
-            <Link href="/" className="transition-opacity hover:opacity-90">
-              <BrandLogo size="md" variant="white" />
-            </Link>
-            <div className="flex items-center gap-6 text-xs font-semibold text-stone-300">
-              <Link href="/privacy" className="hover:text-[#FF5722] transition">
+      {/* 7. Footer */}
+      <footer className="bg-[#1C1C1C] text-white py-12 border-t border-stone-800">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex flex-col md:flex-row items-center justify-between gap-6 pb-8 border-b border-stone-800">
+            <BrandLogo size="lg" variant="white" />
+            <div className="flex items-center gap-4 text-xs text-stone-400 flex-wrap justify-center">
+              <Link href="/customer/menu" className="hover:text-white transition">
+                Menu
+              </Link>
+              <Link href="/customer/orders" className="hover:text-white transition">
+                Order Tracking
+              </Link>
+              <Link href="/privacy" className="hover:text-white transition">
                 Privacy Policy
               </Link>
-              <Link href="/terms" className="hover:text-[#FF5722] transition">
+              <Link href="/terms" className="hover:text-white transition">
                 Terms of Service
-              </Link>
-              <Link href="/rules" className="hover:text-[#FF5722] transition">
-                Canteen Rules
               </Link>
             </div>
           </div>
-
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-stone-400">
-            <p>© {new Date().getFullYear()} Best Canteen. All rights reserved.</p>
-            <p className="text-stone-500">Good Food · Brighter Days · Cashless Canteen Management</p>
+          <div className="pt-6 text-center text-xs text-stone-500">
+            © {new Date().getFullYear()} SAKTHI MESS. Online Food Ordering & Doorstep Delivery. All rights reserved.
           </div>
         </div>
       </footer>

@@ -9,15 +9,16 @@ export function formatPrice(price: number): string {
   return `₹${price.toLocaleString('en-IN')}`;
 }
 
-export function generateOrderId(): string {
-  const randomNum = Math.floor(10000 + Math.random() * 90000);
-  return `BC${randomNum}`;
+export function generateOrderNumber(existingCount = 0): string {
+  // Human-readable sequential order number starting at SM-1001
+  const num = 1001 + existingCount;
+  return `SM-${num}`;
 }
 
-export function generateSecureToken(orderId: string): string {
-  const salt = Math.random().toString(36).substring(2, 8).toUpperCase();
-  const timestamp = Date.now().toString(36).toUpperCase();
-  return `BESTCANTEEN::${orderId}::${salt}::${timestamp}`;
+export function generateOrderId(): string {
+  // Fast random human-readable order number if count unknown
+  const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+  return `SM-${randomSuffix}`;
 }
 
 export function formatTime12h(time24: string): string {
@@ -28,6 +29,19 @@ export function formatTime12h(time24: string): string {
   const period = hour >= 12 ? 'PM' : 'AM';
   hour = hour % 12 || 12;
   return `${hour}:${min} ${period}`;
+}
+
+export function formatDateTime(iso: string): { date: string; time: string } {
+  if (!iso) return { date: '', time: '' };
+  try {
+    const d = new Date(iso);
+    return {
+      date: d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+      time: d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }),
+    };
+  } catch {
+    return { date: '', time: '' };
+  }
 }
 
 export function parseMinutes(time24: string): number {

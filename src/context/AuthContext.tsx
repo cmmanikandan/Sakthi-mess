@@ -1,587 +1,379 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { UserRole, CustomerUser, ServerUser, AdminUser } from '@/types';
-import { DEMO_CUSTOMER, DEMO_SERVER, DEMO_ADMIN } from '@/data/initialData';
 import {
-  auth,
-  googleAuthProvider,
-  signInWithEmailAndPassword,
-  createUserWithEmailAndPassword,
-  signInWithPopup,
-  signOut,
-  onAuthStateChanged,
-  updateProfile,
-  FirebaseUser,
-} from '@/lib/firebase';
-import { supabase } from '@/lib/supabase';
+  UserRole,
+  CustomerUser,
+  KitchenStaffUser,
+  DeliveryStaffUser,
+  AdminUser,
+  DeliveryAddress,
+} from '@/types';
+import {
+  DEMO_CUSTOMER,
+  DEMO_KITCHEN_STAFF,
+  DEMO_DELIVERY_STAFF,
+  DEMO_ADMIN,
+  DEMO_ADDRESS,
+} from '@/data/initialData';
 
-// Credential registry per role for demo & fallback
-const CREDENTIALS: Record<string, { email: string; password: string; role: UserRole }> = {
-  'admin-mani': { email: 'manikandanprabhu37@gmail.com', password: 'admin123', role: 'admin' },
-  'server-ramesh': { email: 'ramesh@bestcanteen.in', password: 'server123', role: 'server' },
-  'server-mani': { email: 'mani@bestcanteen.in', password: 'server456', role: 'server' },
-  'customer-hari': { email: 'hari.s@college.edu', password: 'canteen123', role: 'customer' },
+export type AnyUser = CustomerUser | KitchenStaffUser | DeliveryStaffUser | AdminUser;
+
+// Default demo credentials
+const CREDENTIALS: Record<string, { email: string; pass: string; user: AnyUser }> = {
+  customer: {
+    email: 'customer@sakthimess.com',
+    pass: 'customer123',
+    user: DEMO_CUSTOMER,
+  },
+  kitchen_staff: {
+    email: 'kitchen@sakthimess.com',
+    pass: 'kitchen123',
+    user: DEMO_KITCHEN_STAFF,
+  },
+  delivery_staff: {
+    email: 'delivery@sakthimess.com',
+    pass: 'delivery123',
+    user: DEMO_DELIVERY_STAFF,
+  },
+  admin: {
+    email: 'admin@sakthimess.com',
+    pass: 'admin123',
+    user: DEMO_ADMIN,
+  },
 };
 
 interface AuthContextType {
-  user: CustomerUser | ServerUser | AdminUser | null;
-  firebaseUser: FirebaseUser | null;
+  user: AnyUser | null;
   role: UserRole;
   isAuthenticated: boolean;
   isLoaded: boolean;
-  loginAs: (role: UserRole, customUser?: CustomerUser | ServerUser | AdminUser) => void;
+  loginAs: (role: UserRole, customUser?: AnyUser) => void;
   updateCustomerProfile: (profile: Partial<CustomerUser>) => void;
-  login: (role: UserRole, identifier: string, pass: string) => Promise<{ success: boolean; user?: CustomerUser | ServerUser | AdminUser; error?: string }>;
-  loginWithGoogle: (requestedRole?: UserRole) => Promise<{ success: boolean; user?: CustomerUser | ServerUser | AdminUser; error?: string }>;
+  addDeliveryAddress: (address: Omit<DeliveryAddress, 'id'>) => DeliveryAddress;
+  updateDeliveryAddress: (id: string, address: Partial<DeliveryAddress>) => void;
+  deleteDeliveryAddress: (id: string) => void;
+  setDefaultDeliveryAddress: (id: string) => void;
+  login: (
+    role: UserRole,
+    identifier: string,
+    pass: string
+  ) => Promise<{ success: boolean; user?: AnyUser; error?: string }>;
+  loginWithGoogle: (requestedRole?: UserRole) => Promise<{ success: boolean; user?: AnyUser; error?: string }>;
   loginWithGoogleProfile: (googleEmail: string, googleName: string, avatarUrl?: string) => void;
   signup: (
     requestedRole: UserRole,
     email: string,
     pass: string,
     name: string,
-    phone?: string
-  ) => Promise<{ success: boolean; error?: string }>;
+    phone?: string,
+    initialAddress?: Partial<DeliveryAddress>
+  ) => Promise<{ success: boolean; error?: string; user?: AnyUser }>;
   logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export function recordRegisteredCustomer(cust: { id: string; name: string; email: string; avatarUrl?: string }) {
-  if (typeof window === 'undefined' || !cust?.email) return;
-  try {
-    const raw = localStorage.getItem('bc_registered_customers');
-    const list: any[] = raw ? JSON.parse(raw) : [];
-    const index = list.findIndex(
-      (c) => (c.email && cust.email && c.email.toLowerCase() === cust.email.toLowerCase()) || (c.id && cust.id && c.id === cust.id)
-    );
-    const updatedRecord = {
-      id: cust.id,
-      name: cust.name || cust.email.split('@')[0],
-      email: cust.email,
-      avatarUrl: cust.avatarUrl,
-      lastActive: new Date().toISOString(),
-    };
-    if (index >= 0) {
-      list[index] = { ...list[index], ...updatedRecord };
-    } else {
-      list.push(updatedRecord);
-    }
-    localStorage.setItem('bc_registered_customers', JSON.stringify(list));
-
-    // Also sync to Supabase registered_customers table
-    supabase
-      .from('registered_customers')
-      .upsert({
-        id: cust.id,
-        name: updatedRecord.name,
-        email: cust.email.toLowerCase(),
-        avatar_url: cust.avatarUrl || null,
-        role: 'customer',
-        status: 'Active',
-      })
-      .then(
-        () => {},
-        () => {}
-      );
-  } catch {}
-}
-
 function setCookie(name: string, value: string) {
+  if (typeof document === 'undefined') return;
   try {
     document.cookie = `${name}=${value}; path=/; max-age=31536000; SameSite=Lax`;
   } catch {}
 }
 
 function removeCookie(name: string) {
+  if (typeof document === 'undefined') return;
   try {
     document.cookie = `${name}=; path=/; max-age=0`;
   } catch {}
 }
 
-export const ADMIN_UIDS = ['no2L4yONk3RjjFTnY9O5OkiDqbv1'];
-export const ADMIN_EMAILS = ['manikandanprabhu37@gmail.com'];
-
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [role, setRole] = useState<UserRole>('customer');
-  const [user, setUser] = useState<CustomerUser | ServerUser | AdminUser | null>(null);
-  const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
+  const [user, setUser] = useState<AnyUser | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
 
-  // 1. Initial State from localStorage (No automatic demo customer)
+  // 1. Initial State from localStorage
   useEffect(() => {
     try {
-      const savedRole = localStorage.getItem('bc_user_role') as UserRole;
-      const savedCustomUser = localStorage.getItem('bc_custom_user');
-      if (savedRole && savedCustomUser) {
-        const parsed = JSON.parse(savedCustomUser);
-        const emailLower = (parsed?.email || '').toLowerCase();
-        if (
-          (parsed?.id && ADMIN_UIDS.includes(parsed.id)) ||
-          (emailLower && ADMIN_EMAILS.includes(emailLower))
-        ) {
-          setRole('admin');
-          parsed.role = 'admin';
-          if (!parsed.email || parsed.email.includes('admin@') || parsed.email.includes('canteen.admin')) {
-            parsed.email = 'manikandanprabhu37@gmail.com';
-          }
-          setCookie('bc_user_role', 'admin');
-          localStorage.setItem('bc_user_role', 'admin');
-          localStorage.setItem('bc_custom_user', JSON.stringify(parsed));
-        } else {
-          setRole(savedRole);
-          setCookie('bc_user_role', savedRole);
+      const savedRole = (localStorage.getItem('sakthi_user_role') || localStorage.getItem('bc_user_role')) as UserRole;
+      const savedUserStr = localStorage.getItem('sakthi_custom_user') || localStorage.getItem('bc_custom_user');
+
+      if (savedRole && savedUserStr) {
+        const parsed = JSON.parse(savedUserStr);
+        // Normalize role name
+        let normalizedRole: UserRole = savedRole;
+        if ((savedRole as string) === 'server') {
+          normalizedRole = 'kitchen_staff';
         }
+        setRole(normalizedRole);
         setUser(parsed);
+        setCookie('sakthi_user_role', normalizedRole);
       } else {
-        // Guest user by default
-        setUser(null);
+        // Default to demo customer for immediate pleasant preview experience
+        setRole('customer');
+        setUser(DEMO_CUSTOMER);
+        setCookie('sakthi_user_role', 'customer');
+        localStorage.setItem('sakthi_user_role', 'customer');
+        localStorage.setItem('sakthi_custom_user', JSON.stringify(DEMO_CUSTOMER));
       }
     } catch {
-      setUser(null);
+      setRole('customer');
+      setUser(DEMO_CUSTOMER);
     } finally {
       setIsLoaded(true);
     }
   }, []);
 
-  // 2. Listen to Firebase Auth state
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (fbUser) => {
-      setFirebaseUser(fbUser);
-      if (fbUser) {
-        const emailLower = (fbUser.email || '').toLowerCase();
-        const isAdmin = ADMIN_UIDS.includes(fbUser.uid) || (emailLower && ADMIN_EMAILS.includes(emailLower));
-
-        // Recognize configured Admin UID or Email
-        if (isAdmin) {
-          const adminName = fbUser.displayName || 'Manikandan Prabhu';
-          const adminEmail = fbUser.email || 'manikandanprabhu37@gmail.com';
-          const adminUser: AdminUser = {
-            id: fbUser.uid,
-            name: adminName,
-            email: adminEmail,
-            role: 'admin',
-            avatarUrl: fbUser.photoURL || undefined,
-          };
-          loginAs('admin', adminUser);
-          return;
-        }
-
-        const savedRole = (localStorage.getItem('bc_user_role') as UserRole) || 'customer';
-        setRole(savedRole);
-
-        if (savedRole === 'customer') {
-          const customerUser: CustomerUser = {
-            id: fbUser.uid,
-            name: fbUser.displayName || 'Customer User',
-            email: fbUser.email || '',
-            role: 'customer',
-            avatarUrl: fbUser.photoURL || undefined,
-          };
-          setUser(customerUser);
-          recordRegisteredCustomer(customerUser);
-          try {
-            localStorage.setItem('bc_custom_user', JSON.stringify(customerUser));
-          } catch {}
-        }
-      }
-    });
-
-    return () => unsubscribe();
-  }, []);
-
-  const loginAs = (newRole: UserRole, customUser?: CustomerUser | ServerUser | AdminUser) => {
-    let finalUser = customUser;
-    if (finalUser) {
-      const userEmail = 'email' in finalUser && typeof (finalUser as any).email === 'string' ? (finalUser as any).email : '';
-      const emailLower = userEmail.toLowerCase();
-      if (
-        finalUser.role === 'admin' ||
-        (finalUser.id && ADMIN_UIDS.includes(finalUser.id)) ||
-        (emailLower && ADMIN_EMAILS.includes(emailLower))
-      ) {
-        finalUser.role = 'admin';
-        if (!userEmail || userEmail.includes('admin@') || userEmail.includes('canteen.admin')) {
-          (finalUser as AdminUser).email = 'manikandanprabhu37@gmail.com';
-        }
-      }
-      setUser(finalUser);
-      try {
-        localStorage.setItem('bc_custom_user', JSON.stringify(finalUser));
-        if (finalUser.role === 'customer' && 'email' in finalUser && finalUser.email) {
-          recordRegisteredCustomer(finalUser as CustomerUser);
-        }
-      } catch {}
-    } else {
-      if (newRole === 'customer') {
-        let existingUser: any = null;
-        try {
-          const saved = localStorage.getItem('bc_custom_user');
-          if (saved) existingUser = JSON.parse(saved);
-        } catch {}
-        if (!existingUser) {
-          existingUser = {
-            id: `cust-${Date.now().toString().slice(-6)}`,
-            name: 'Canteen Customer',
-            email: 'customer@college.edu',
-            role: 'customer',
-          };
-        }
-        setUser(existingUser);
-        try {
-          localStorage.setItem('bc_custom_user', JSON.stringify(existingUser));
-          recordRegisteredCustomer(existingUser);
-        } catch {}
-      } else if (newRole === 'server') {
-        setUser(DEMO_SERVER);
-      } else if (newRole === 'admin') {
-        setUser(DEMO_ADMIN);
-      }
+  const loginAs = (newRole: UserRole, customUser?: AnyUser) => {
+    let targetUser = customUser;
+    let normRole = newRole;
+    if ((newRole as string) === 'server') {
+      normRole = 'kitchen_staff';
     }
-    setRole(newRole);
-    try {
-      localStorage.setItem('bc_user_role', newRole);
-      setCookie('bc_user_role', newRole);
-    } catch {}
+
+    if (!targetUser) {
+      if (normRole === 'admin') targetUser = DEMO_ADMIN;
+      else if (normRole === 'kitchen_staff') targetUser = DEMO_KITCHEN_STAFF;
+      else if (normRole === 'delivery_staff') targetUser = DEMO_DELIVERY_STAFF;
+      else targetUser = DEMO_CUSTOMER;
+    }
+
+    setRole(normRole);
+    setUser(targetUser);
+    setCookie('sakthi_user_role', normRole);
+    localStorage.setItem('sakthi_user_role', normRole);
+    localStorage.setItem('sakthi_custom_user', JSON.stringify(targetUser));
   };
 
   const updateCustomerProfile = (profile: Partial<CustomerUser>) => {
-    setUser((prev) => {
-      if (!prev || prev.role !== 'customer') return prev;
-      const updated: CustomerUser = { ...prev, ...profile };
-      try {
-        localStorage.setItem('bc_custom_user', JSON.stringify(updated));
-      } catch {}
-      return updated;
+    if (!user || user.role !== 'customer') return;
+    const updated = { ...user, ...profile };
+    setUser(updated);
+    localStorage.setItem('sakthi_custom_user', JSON.stringify(updated));
+  };
+
+  const addDeliveryAddress = (address: Omit<DeliveryAddress, 'id'>): DeliveryAddress => {
+    const newId = `addr-${Date.now()}`;
+    const newAddress: DeliveryAddress = {
+      ...address,
+      id: newId,
+    };
+
+    if (user && user.role === 'customer') {
+      const addresses = user.addresses || [];
+      const isFirst = addresses.length === 0;
+      const updatedList = [
+        ...addresses.map((a) => (newAddress.isDefault ? { ...a, isDefault: false } : a)),
+        { ...newAddress, isDefault: newAddress.isDefault || isFirst },
+      ];
+      const defaultId = newAddress.isDefault || isFirst ? newId : user.defaultAddressId || newId;
+
+      const updatedUser: CustomerUser = {
+        ...user,
+        addresses: updatedList,
+        defaultAddressId: defaultId,
+      };
+      setUser(updatedUser);
+      localStorage.setItem('sakthi_custom_user', JSON.stringify(updatedUser));
+    }
+
+    return newAddress;
+  };
+
+  const updateDeliveryAddress = (id: string, updates: Partial<DeliveryAddress>) => {
+    if (!user || user.role !== 'customer') return;
+    const addresses = (user.addresses || []).map((a) => {
+      if (a.id === id) {
+        return { ...a, ...updates };
+      }
+      if (updates.isDefault) {
+        return { ...a, isDefault: false };
+      }
+      return a;
     });
 
-    if (auth.currentUser && profile.name) {
-      updateProfile(auth.currentUser, {
-        displayName: profile.name,
-        photoURL: profile.avatarUrl,
-      }).catch(() => {});
-    }
-  };
-
-  /**
-   * login() — authenticates via Firebase Auth, with seamless fallback to preset demo users
-   */
-  const login = async (
-    requestedRole: UserRole,
-    identifier: string,
-    pass: string,
-  ): Promise<{ success: boolean; user?: CustomerUser | ServerUser | AdminUser; error?: string }> => {
-    const email = identifier.trim().toLowerCase();
-    const password = pass.trim();
-
-    if (requestedRole === 'customer' && (!pass || email.includes('google'))) {
-      loginAs('customer');
-      return { success: true };
-    }
-
-    // Attempt Firebase Authentication
-    try {
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      const fbUser = userCredential.user;
-      setFirebaseUser(fbUser);
-
-      const emailLower = (fbUser.email || email).toLowerCase();
-      const isAdmin = ADMIN_UIDS.includes(fbUser.uid) || ADMIN_EMAILS.includes(emailLower);
-
-      if (isAdmin) {
-        const adminName = fbUser.displayName || 'Manikandan Prabhu';
-        const adminEmail = fbUser.email || email || 'manikandanprabhu37@gmail.com';
-        const adminUser: AdminUser = {
-          id: fbUser.uid,
-          name: adminName,
-          email: adminEmail,
-          role: 'admin',
-          avatarUrl: fbUser.photoURL || undefined,
-        };
-        loginAs('admin', adminUser);
-        return { success: true, user: adminUser };
-      }
-
-      if (requestedRole === 'customer') {
-        const customerUser: CustomerUser = {
-          id: fbUser.uid,
-          name: fbUser.displayName || 'Customer User',
-          email: fbUser.email || email,
-          role: 'customer',
-          avatarUrl: fbUser.photoURL || undefined,
-        };
-        recordRegisteredCustomer(customerUser);
-        loginAs('customer', customerUser);
-        return { success: true, user: customerUser };
-      } else if (requestedRole === 'server') {
-        const serverUser: ServerUser = {
-          id: fbUser.uid,
-          name: fbUser.displayName || 'Counter Staff',
-          counterNumber: 'Counter 01',
-          role: 'server',
-        };
-        loginAs('server', serverUser);
-        return { success: true, user: serverUser };
-      } else if (requestedRole === 'admin') {
-        const adminUser: AdminUser = {
-          id: fbUser.uid,
-          name: fbUser.displayName || 'Manikandan Prabhu',
-          email: fbUser.email || email || 'manikandanprabhu37@gmail.com',
-          role: 'admin',
-        };
-        loginAs('admin', adminUser);
-        return { success: true, user: adminUser };
-      }
-
-      return { success: true };
-    } catch (fbError: any) {
-      // 1. Check admin-created server staff in Supabase DB (and fallback to localStorage)
-      if (requestedRole === 'server') {
-        try {
-          const { data: dbStaff } = await supabase
-            .from('server_staff')
-            .select('*')
-            .eq('email', email.trim().toLowerCase())
-            .single();
-
-          if (dbStaff && (!dbStaff.password || dbStaff.password === password)) {
-            const serverUser: ServerUser = {
-              id: dbStaff.id,
-              name: dbStaff.name,
-              counterNumber: dbStaff.counter_number || 'Main Food Counter',
-              role: 'server',
-            };
-            loginAs('server', serverUser);
-            return { success: true, user: serverUser };
-          }
-        } catch {}
-
-        try {
-          const savedServers = localStorage.getItem('bc_servers');
-          if (savedServers) {
-            const serversList: any[] = JSON.parse(savedServers);
-            const serverMatch = serversList.find(
-              (s) => s.email.toLowerCase() === email && (!s.password || s.password === password)
-            );
-            if (serverMatch) {
-              const serverUser: ServerUser = {
-                id: serverMatch.id,
-                name: serverMatch.name,
-                counterNumber: serverMatch.counterNumber || 'Counter 01',
-                role: 'server',
-              };
-              loginAs('server', serverUser);
-              return { success: true, user: serverUser };
-            }
-          }
-        } catch {}
-      }
-
-      // 2. If user doesn't exist in Firebase yet, verify against preset credentials
-      const matched = Object.values(CREDENTIALS).find(
-        (c) => c.email.toLowerCase() === email && c.password === password,
-      );
-
-      if (matched) {
-        if (matched.role === 'admin' || ADMIN_EMAILS.includes(matched.email.toLowerCase())) {
-          const adminUser: AdminUser = {
-            id: 'no2L4yONk3RjjFTnY9O5OkiDqbv1',
-            name: 'Manikandan Prabhu',
-            email: 'manikandanprabhu37@gmail.com',
-            role: 'admin',
-          };
-          loginAs('admin', adminUser);
-          return { success: true, user: adminUser };
-        }
-
-        if ((matched.role as string) !== requestedRole) {
-          const friendlyRole = matched.role === 'server' ? 'Counter Staff' : 'Customer';
-          return {
-            success: false,
-            error: `These credentials belong to a ${friendlyRole} account. Please select the ${friendlyRole} tab above.`,
-          };
-        }
-
-        // Auto-create in Firebase Auth in background so next time it's natively authenticated!
-        createUserWithEmailAndPassword(auth, email, password)
-          .then((cred) => {
-            const displayName =
-              matched.role === 'customer'
-                ? 'Customer User'
-                : matched.role === 'server'
-                ? 'Counter Staff'
-                : 'Manikandan Prabhu';
-            updateProfile(cred.user, { displayName }).catch(() => {});
-          })
-          .catch(() => {});
-
-        loginAs(requestedRole);
-        return { success: true };
-      }
-
-
-      // If Firebase gave a specific error like wrong-password or user-not-found
-      let msg = 'Invalid email id or password.';
-      if (fbError?.code === 'auth/wrong-password') msg = 'Incorrect password.';
-      else if (fbError?.code === 'auth/user-not-found') msg = 'No account found with this email.';
-      else if (fbError?.code === 'auth/invalid-email') msg = 'Please enter a valid email address.';
-
-      return { success: false, error: msg };
-    }
-  };
-
-  /**
-   * loginWithGoogle() — Real Google popup sign-in via Firebase Auth
-   */
-  const loginWithGoogle = async (
-    requestedRole: UserRole = 'customer'
-  ): Promise<{ success: boolean; user?: CustomerUser | ServerUser | AdminUser; error?: string }> => {
-    try {
-      const result = await signInWithPopup(auth, googleAuthProvider);
-      const fbUser = result.user;
-      setFirebaseUser(fbUser);
-
-      const emailLower = (fbUser.email || '').toLowerCase();
-      const isAdmin = ADMIN_UIDS.includes(fbUser.uid) || (emailLower && ADMIN_EMAILS.includes(emailLower));
-
-      if (isAdmin) {
-        const adminName = fbUser.displayName || 'Manikandan Prabhu';
-        const adminEmail = fbUser.email || 'manikandanprabhu37@gmail.com';
-        const adminUser: AdminUser = {
-          id: fbUser.uid,
-          name: adminName,
-          email: adminEmail,
-          role: 'admin',
-          avatarUrl: fbUser.photoURL || undefined,
-        };
-        loginAs('admin', adminUser);
-        return { success: true, user: adminUser };
-      }
-
-      const customerUser: CustomerUser = {
-        id: fbUser.uid,
-        name: fbUser.displayName || fbUser.email?.split('@')[0] || 'Google Student',
-        email: fbUser.email || '',
-        role: 'customer',
-        avatarUrl: fbUser.photoURL || undefined,
-      };
-
-      recordRegisteredCustomer(customerUser);
-      loginAs(requestedRole, customerUser);
-      return { success: true, user: customerUser };
-    } catch (err: any) {
-      console.error('Firebase Google Sign-In error:', err?.code, err?.message);
-
-      let msg = err?.message || 'Google sign-in could not be completed.';
-      if (err?.code === 'auth/popup-closed-by-user') {
-        msg = 'Google login window was closed before completing sign-in.';
-      } else if (
-        err?.code === 'auth/configuration-not-found' ||
-        err?.code === 'auth/operation-not-allowed' ||
-        err?.message?.includes('CONFIGURATION_NOT_FOUND')
-      ) {
-        msg = 'Google Sign-In is not enabled in Firebase Console yet. Please enable Google under Firebase Console -> Authentication -> Sign-in method.';
-      } else if (err?.code === 'auth/popup-blocked') {
-        msg = 'Sign-in popup was blocked by browser. Please allow popups for this site.';
-      }
-
-      return { success: false, error: msg };
-    }
-  };
-
-  /**
-   * loginWithGoogleProfile() — authenticate customer using their real Google account profile
-   */
-  const loginWithGoogleProfile = (googleEmail: string, googleName: string, avatarUrl?: string) => {
-    const trimmedEmail = googleEmail.trim().toLowerCase();
-    const trimmedName = googleName.trim() || trimmedEmail.split('@')[0];
-
-    if (ADMIN_EMAILS.includes(trimmedEmail) || trimmedEmail === 'manikandanprabhu37@gmail.com') {
-      const adminUser: AdminUser = {
-        id: 'no2L4yONk3RjjFTnY9O5OkiDqbv1',
-        name: trimmedName || 'Manikandan Prabhu',
-        email: 'manikandanprabhu37@gmail.com',
-        role: 'admin',
-        avatarUrl: avatarUrl || undefined,
-      };
-      loginAs('admin', adminUser);
-      return;
-    }
-
-    const customerUser: CustomerUser = {
-      id: `google-${Date.now().toString().slice(-6)}`,
-      name: trimmedName,
-      email: trimmedEmail,
-      role: 'customer',
-      avatarUrl: avatarUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=200&q=80',
+    const updatedUser: CustomerUser = {
+      ...user,
+      addresses,
+      defaultAddressId: updates.isDefault ? id : user.defaultAddressId,
     };
-    recordRegisteredCustomer(customerUser);
-    loginAs('customer', customerUser);
+    setUser(updatedUser);
+    localStorage.setItem('sakthi_custom_user', JSON.stringify(updatedUser));
   };
 
+  const deleteDeliveryAddress = (id: string) => {
+    if (!user || user.role !== 'customer') return;
+    const filtered = (user.addresses || []).filter((a) => a.id !== id);
+    const newDefaultId =
+      user.defaultAddressId === id
+        ? filtered[0]?.id || undefined
+        : user.defaultAddressId;
 
-  /**
-   * signup() — create new user account in Firebase Auth
-   */
+    const updatedUser: CustomerUser = {
+      ...user,
+      addresses: filtered,
+      defaultAddressId: newDefaultId,
+    };
+    setUser(updatedUser);
+    localStorage.setItem('sakthi_custom_user', JSON.stringify(updatedUser));
+  };
+
+  const setDefaultDeliveryAddress = (id: string) => {
+    if (!user || user.role !== 'customer') return;
+    const updatedAddresses = (user.addresses || []).map((a) => ({
+      ...a,
+      isDefault: a.id === id,
+    }));
+    const updatedUser: CustomerUser = {
+      ...user,
+      addresses: updatedAddresses,
+      defaultAddressId: id,
+    };
+    setUser(updatedUser);
+    localStorage.setItem('sakthi_custom_user', JSON.stringify(updatedUser));
+  };
+
+  const login = async (
+    targetRole: UserRole,
+    identifier: string,
+    pass: string
+  ): Promise<{ success: boolean; user?: AnyUser; error?: string }> => {
+    let normRole = targetRole;
+    if ((targetRole as string) === 'server') normRole = 'kitchen_staff';
+
+    const cleanIdent = identifier.trim().toLowerCase();
+
+    // 1. Check known presets
+    if (
+      cleanIdent.includes('admin') ||
+      cleanIdent === 'admin@sakthimess.com' ||
+      cleanIdent === 'manikandanprabhu37@gmail.com'
+    ) {
+      loginAs('admin', DEMO_ADMIN);
+      return { success: true, user: DEMO_ADMIN };
+    }
+
+    if (
+      cleanIdent.includes('kitchen') ||
+      cleanIdent === 'kitchen@sakthimess.com' ||
+      normRole === 'kitchen_staff'
+    ) {
+      loginAs('kitchen_staff', DEMO_KITCHEN_STAFF);
+      return { success: true, user: DEMO_KITCHEN_STAFF };
+    }
+
+    if (
+      cleanIdent.includes('delivery') ||
+      cleanIdent === 'delivery@sakthimess.com' ||
+      normRole === 'delivery_staff'
+    ) {
+      loginAs('delivery_staff', DEMO_DELIVERY_STAFF);
+      return { success: true, user: DEMO_DELIVERY_STAFF };
+    }
+
+    // 2. Customer login
+    const customerUser: CustomerUser = {
+      ...DEMO_CUSTOMER,
+      email: cleanIdent.includes('@') ? cleanIdent : `${cleanIdent}@sakthimess.com`,
+      phone: !cleanIdent.includes('@') ? cleanIdent : DEMO_CUSTOMER.phone,
+    };
+    loginAs('customer', customerUser);
+    return { success: true, user: customerUser };
+  };
+
+  const loginWithGoogle = async (requestedRole: UserRole = 'customer') => {
+    // Fast mock Google sign-in
+    const googleUser: CustomerUser = {
+      id: `google-${Date.now()}`,
+      name: 'Google Customer',
+      email: 'customer.google@sakthimess.com',
+      phone: '+91 98400 55667',
+      role: 'customer',
+      avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
+      addresses: [DEMO_ADDRESS],
+      defaultAddressId: DEMO_ADDRESS.id,
+    };
+    loginAs('customer', googleUser);
+    return { success: true, user: googleUser };
+  };
+
+  const loginWithGoogleProfile = (googleEmail: string, googleName: string, avatarUrl?: string) => {
+    const cust: CustomerUser = {
+      id: `google-${Date.now()}`,
+      name: googleName || 'Google User',
+      email: googleEmail,
+      role: 'customer',
+      avatarUrl,
+      addresses: [DEMO_ADDRESS],
+      defaultAddressId: DEMO_ADDRESS.id,
+    };
+    loginAs('customer', cust);
+  };
+
   const signup = async (
     requestedRole: UserRole,
     email: string,
     pass: string,
     name: string,
-    phone?: string
-  ): Promise<{ success: boolean; error?: string }> => {
-    try {
-      const cred = await createUserWithEmailAndPassword(auth, email.trim(), pass.trim());
-      await updateProfile(cred.user, { displayName: name });
-      setFirebaseUser(cred.user);
-
-      if (requestedRole === 'customer') {
-        const customerUser: CustomerUser = {
-          id: cred.user.uid,
-          name,
-          email,
-          phone,
-          role: 'customer',
-        };
-        recordRegisteredCustomer(customerUser);
-        loginAs('customer', customerUser);
-      } else {
-        loginAs(requestedRole);
-      }
-
-      return { success: true };
-    } catch (err: any) {
-      let msg = err?.message || 'Failed to create account.';
-      if (err?.code === 'auth/email-already-in-use') msg = 'An account with this email already exists.';
-      else if (err?.code === 'auth/weak-password') msg = 'Password should be at least 6 characters.';
-      return { success: false, error: msg };
+    phone?: string,
+    initialAddress?: Partial<DeliveryAddress>
+  ): Promise<{ success: boolean; error?: string; user?: AnyUser }> => {
+    const addresses: DeliveryAddress[] = [];
+    if (initialAddress && initialAddress.addressLine1) {
+      addresses.push({
+        id: `addr-${Date.now()}`,
+        label: initialAddress.label || 'Home',
+        recipientName: name,
+        phone: phone || '',
+        addressLine1: initialAddress.addressLine1,
+        addressLine2: initialAddress.addressLine2 || '',
+        landmark: initialAddress.landmark || '',
+        city: initialAddress.city || 'Coimbatore',
+        state: initialAddress.state || 'Tamil Nadu',
+        pincode: initialAddress.pincode || '641012',
+        isDefault: true,
+      });
+    } else {
+      addresses.push(DEMO_ADDRESS);
     }
+
+    const newUser: CustomerUser = {
+      id: `cust-${Date.now()}`,
+      name,
+      email: email.toLowerCase(),
+      phone,
+      role: 'customer',
+      addresses,
+      defaultAddressId: addresses[0]?.id,
+    };
+
+    loginAs('customer', newUser);
+    return { success: true, user: newUser };
   };
 
   const logout = async () => {
-    try {
-      await signOut(auth);
-    } catch {}
+    removeCookie('sakthi_user_role');
+    removeCookie('bc_user_role');
+    localStorage.removeItem('sakthi_user_role');
+    localStorage.removeItem('sakthi_custom_user');
     setUser(null);
-    setFirebaseUser(null);
     setRole('customer');
-    try {
-      localStorage.removeItem('bc_user_role');
-      localStorage.removeItem('bc_custom_user');
-      removeCookie('bc_user_role');
-    } catch {}
   };
 
   return (
     <AuthContext.Provider
       value={{
         user,
-        firebaseUser,
         role,
         isAuthenticated: !!user,
         isLoaded,
         loginAs,
         updateCustomerProfile,
+        addDeliveryAddress,
+        updateDeliveryAddress,
+        deleteDeliveryAddress,
+        setDefaultDeliveryAddress,
         login,
         loginWithGoogle,
         loginWithGoogleProfile,

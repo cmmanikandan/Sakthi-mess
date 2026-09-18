@@ -170,7 +170,7 @@ export default function AdminMenuPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'BestCanteen_Menu_Template.json';
+    a.download = 'SakthiMess_Menu_Template.json';
     a.click();
   };
 

@@ -1,24 +1,27 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
-import { FoodItem, MealSchedule, Order, OrderItem, NotificationItem, MealCategory } from '@/types';
+import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
+import {
+  FoodItem,
+  MealSchedule,
+  Order,
+  OrderItem,
+  NotificationItem,
+  MealCategory,
+  OrderStatus,
+  DeliveryAddress,
+  FoodCategoryItem,
+  RestaurantConfig,
+} from '@/types';
 import {
   INITIAL_FOOD_ITEMS,
   INITIAL_MEAL_SCHEDULES,
   INITIAL_ORDERS,
+  FOOD_CATEGORIES,
+  RESTAURANT_CONFIG,
+  DEMO_ADDRESS,
 } from '@/data/initialData';
-import { generateOrderId, generateSecureToken, parseMinutes, formatTime12h } from '@/lib/utils';
-import {
-  supabase,
-  safeDbSync,
-  mapOrderFromDb,
-  mapOrderToDb,
-  mapFoodFromDb,
-  mapFoodToDb,
-  mapScheduleFromDb,
-  mapScheduleToDb,
-} from '@/lib/supabase';
-import { logCanteenEvent, requestFirebaseNotificationPermission } from '@/lib/firebase';
+import { generateOrderNumber, parseMinutes, formatTime12h } from '@/lib/utils';
 
 interface ActiveMealInfo {
   category: MealCategory;
@@ -30,17 +33,20 @@ interface ActiveMealInfo {
   schedule?: MealSchedule;
 }
 
-interface CanteenContextType {
+interface SakthiMessContextType {
   mealSchedules: MealSchedule[];
   foods: FoodItem[];
   orders: Order[];
   favorites: string[];
   notifications: NotificationItem[];
-  simulatedTime: string | null; // e.g. "13:30" or null for system clock
+  categories: FoodCategoryItem[];
+  restaurantConfig: RestaurantConfig;
+  updateRestaurantConfig: (updates: Partial<RestaurantConfig>) => void;
+  simulatedTime: string | null;
   activeMealInfo: ActiveMealInfo;
   effectiveTime: Date;
   currentTimeStr: string;
-  isSupabaseConnected: boolean;
+  isSupabaseConnected: boolean; // Kept for backward-compatible indicator
   setSimulatedTime: (timeStr: string | null) => void;
   updateMealSchedule: (id: string, updates: Partial<MealSchedule>) => void;
   toggleFoodAvailability: (id: string) => void;
@@ -52,38 +58,64 @@ interface CanteenContextType {
   createOrder: (
     items: OrderItem[],
     notes?: string,
-    customerDetails?: { id?: string; name?: string; phone?: string; email?: string; avatarUrl?: string },
-    paymentInfo?: { paymentId?: string; razorpayOrderId?: string }
+    customerDetails?: {
+      id?: string;
+      name?: string;
+      phone?: string;
+      email?: string;
+      avatarUrl?: string;
+      deliveryAddress?: DeliveryAddress;
+    },
+    paymentInfo?: {
+      paymentId?: string;
+      razorpayOrderId?: string;
+      paymentMethod?: 'ONLINE_RAZORPAY' | 'CASH_ON_DELIVERY';
+    }
   ) => Order;
   createCashPosOrder: (
     items: OrderItem[],
-    customerDetails?: { name?: string; phone?: string; notes?: string }
+    customerDetails?: { name?: string; phone?: string; notes?: string; deliveryAddress?: DeliveryAddress }
   ) => Order;
+  updateOrderStatus: (orderId: string, newStatus: OrderStatus, note?: string) => Order | null;
+  acceptOrder: (orderId: string) => Order | null;
+  startPreparingOrder: (orderId: string) => Order | null;
+  startPackingOrder: (orderId: string) => Order | null;
+  markOrderReady: (orderId: string) => Order | null;
+  assignDeliveryStaff: (orderId: string, staffId: string, staffName: string, staffPhone?: string) => Order | null;
+  startDelivery: (orderId: string) => Order | null;
+  markOrderDelivered: (orderId: string) => Order | null;
+  cancelOrder: (orderId: string, reason?: string) => Order | null;
+  rejectOrder: (orderId: string, reason?: string) => Order | null;
   verifyPayment: (orderId: string, paymentId: string) => Order | null;
-  serveOrder: (tokenOrId: string, serverName?: string) => {
+  serveOrder: (orderId: string, staffName?: string) => {
     success: boolean;
     order?: Order;
     error?: string;
     servedAt?: string;
   };
-  addNotification: (title: string, message: string, type: 'order' | 'payment' | 'menu' | 'alert', orderId?: string) => void;
+  addNotification: (
+    title: string,
+    message: string,
+    type: 'order' | 'payment' | 'menu' | 'alert' | 'delivery',
+    orderId?: string
+  ) => void;
   markNotificationAsRead: (id: string) => void;
   markAllNotificationsAsRead: () => void;
   deleteNotification: (id: string) => void;
   requestDeviceNotificationPermission: () => Promise<boolean>;
 }
 
-const CanteenContext = createContext<CanteenContextType | undefined>(undefined);
+const SakthiMessContext = createContext<SakthiMessContextType | undefined>(undefined);
 
 export function CanteenProvider({ children }: { children: React.ReactNode }) {
   const [mealSchedules, setMealSchedules] = useState<MealSchedule[]>(INITIAL_MEAL_SCHEDULES);
   const [foods, setFoods] = useState<FoodItem[]>(INITIAL_FOOD_ITEMS);
-  const [orders, setOrders] = useState<Order[]>([]);
+  const [orders, setOrders] = useState<Order[]>(INITIAL_ORDERS);
   const [favorites, setFavorites] = useState<string[]>([]);
-  const [isSupabaseConnected, setIsSupabaseConnected] = useState<boolean>(false);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [simulatedTime, setSimulatedTimeState] = useState<string | null>(null);
   const [systemClock, setSystemClock] = useState<Date>(new Date());
+  const [restaurantConfig, setRestaurantConfig] = useState<RestaurantConfig>(RESTAURANT_CONFIG);
 
   // Keep system clock ticking
   useEffect(() => {
@@ -93,676 +125,230 @@ export function CanteenProvider({ children }: { children: React.ReactNode }) {
     return () => clearInterval(timer);
   }, []);
 
-  // 1. Initial Hydration from localStorage (with clean purge of old mock data)
+  // 1. Initial Hydration from localStorage
   useEffect(() => {
     try {
-      const savedFoods = localStorage.getItem('bc_foods');
+      const savedFoods = localStorage.getItem('sakthi_foods') || localStorage.getItem('bc_foods');
       if (savedFoods) {
-        const parsedFoods: FoodItem[] = JSON.parse(savedFoods);
-        const cleanedFoods = parsedFoods.map((f) => {
-          if (
-            f.category !== 'snacks' &&
-            Array.isArray(f.availableMeals) &&
-            f.availableMeals.length === 2 &&
-            f.availableMeals.includes('snacks') &&
-            f.availableMeals.includes(f.category)
-          ) {
-            return { ...f, availableMeals: [f.category] };
-          }
-          return f;
-        });
-        setFoods(cleanedFoods);
-      }
-
-      const savedSchedules = localStorage.getItem('bc_meal_schedules');
-      if (savedSchedules) {
-        const parsed = JSON.parse(savedSchedules);
-        const lunch = parsed.find((s: any) => s.id === 'lunch');
-        if (lunch && lunch.endTime === '15:30') {
-          setMealSchedules(parsed);
+        const parsed = JSON.parse(savedFoods);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setFoods(parsed);
         } else {
-          setMealSchedules(INITIAL_MEAL_SCHEDULES);
+          setFoods(INITIAL_FOOD_ITEMS);
+          localStorage.setItem('sakthi_foods', JSON.stringify(INITIAL_FOOD_ITEMS));
         }
+      } else {
+        setFoods(INITIAL_FOOD_ITEMS);
+        localStorage.setItem('sakthi_foods', JSON.stringify(INITIAL_FOOD_ITEMS));
       }
 
-      const savedOrders = localStorage.getItem('bc_orders');
+      const savedOrders = localStorage.getItem('sakthi_orders');
       if (savedOrders) {
-        // Purge any old mock generated tokens and unpaid/pending orders
         const parsedOrders: Order[] = JSON.parse(savedOrders);
-        const cleanOrders = parsedOrders.filter(
-          (o) => o.id !== 'BC10482' && o.id !== 'BC10420' && o.orderStatus !== 'PAYMENT_PENDING' && o.paymentStatus === 'VERIFIED'
-        );
-        setOrders(cleanOrders);
-        localStorage.setItem('bc_orders', JSON.stringify(cleanOrders));
+        setOrders(parsedOrders);
       } else {
-        setOrders([]);
+        setOrders(INITIAL_ORDERS);
+        localStorage.setItem('sakthi_orders', JSON.stringify(INITIAL_ORDERS));
       }
 
-      const savedFavs = localStorage.getItem('bc_favorites');
+      const savedFavs = localStorage.getItem('sakthi_favorites') || localStorage.getItem('bc_favorites');
       if (savedFavs) {
-        const parsedFavs: string[] = JSON.parse(savedFavs);
-        // Purge old mock default favorites
-        const cleanFavs = parsedFavs.filter(
-          (id) => id !== 'food-curd-rice' && id !== 'food-medu-vada'
-        );
-        setFavorites(cleanFavs);
-        localStorage.setItem('bc_favorites', JSON.stringify(cleanFavs));
-      } else {
-        setFavorites([]);
+        setFavorites(JSON.parse(savedFavs));
       }
 
-      const savedNotifs = localStorage.getItem('bc_notifications');
+      const savedNotifs = localStorage.getItem('sakthi_notifications');
       if (savedNotifs) {
-        const parsedNotifs: NotificationItem[] = JSON.parse(savedNotifs);
-        const cleanNotifs = parsedNotifs.filter(
-          (n) => n.id !== 'notif-1' && n.id !== 'notif-2' && n.orderId !== 'BC10482'
-        );
-        setNotifications(cleanNotifs);
+        setNotifications(JSON.parse(savedNotifs));
       } else {
-        setNotifications([]);
+        const initialNotif: NotificationItem = {
+          id: 'notif-welcome',
+          title: 'Welcome to SAKTHI MESS! 🍛',
+          message: 'Order your favourite South Indian meals and get them delivered to your doorstep.',
+          type: 'order',
+          timestamp: new Date().toISOString(),
+          read: false,
+        };
+        setNotifications([initialNotif]);
       }
-
-      localStorage.removeItem('bc_sim_time');
-      setSimulatedTimeState(null);
-    } catch {
-      // ignore
+    } catch (e) {
+      console.error('Error hydrating Sakthi Mess context:', e);
     }
   }, []);
 
-
-  // 2. Fetch remote data from Supabase with graceful fallback
+  // 2. Real-time Cross-Tab Synchronization via Window Storage Event
   useEffect(() => {
-    let isMounted = true;
-
-    async function syncFromSupabase() {
-      try {
-        // Fetch Foods
-        const { data: foodsData, error: foodsError } = await supabase
-          .from('foods')
-          .select('*');
-
-        if (!foodsError && foodsData && foodsData.length > 0) {
-          if (isMounted) {
-            const cleanRemote = foodsData.map(mapFoodFromDb);
-            setFoods(cleanRemote);
-            localStorage.setItem('bc_foods', JSON.stringify(cleanRemote));
-            setIsSupabaseConnected(true);
-          }
-        } else if (!foodsError && foodsData && foodsData.length === 0) {
-          if (isMounted) setIsSupabaseConnected(true);
-        }
-
-        // Fetch Meal Schedules
-        const { data: schedData, error: schedError } = await supabase
-          .from('meal_schedules')
-          .select('*');
-
-        if (!schedError && schedData && schedData.length > 0) {
-          if (isMounted) setMealSchedules(schedData.map(mapScheduleFromDb));
-        }
-
-        // Purge any orphan / unverified / payment pending orders from remote DB
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'sakthi_orders' && e.newValue) {
         try {
-          await supabase
-            .from('orders')
-            .delete()
-            .or('order_status.eq.PAYMENT_PENDING,payment_status.eq.PENDING');
+          setOrders(JSON.parse(e.newValue));
         } catch {}
-
-        // Fetch Orders (strictly verified tokens)
-        const { data: ordersData, error: ordersError } = await supabase
-          .from('orders')
-          .select('*')
-          .order('created_at', { ascending: false });
-
-        if (!ordersError && ordersData && ordersData.length > 0) {
-          const remoteOrders = ordersData
-            .map(mapOrderFromDb)
-            .filter((o) => o.orderStatus !== 'PAYMENT_PENDING' && o.paymentStatus === 'VERIFIED');
-          if (isMounted) {
-            setOrders((local) => {
-              const map = new Map<string, Order>();
-              remoteOrders.forEach((o) => map.set(o.id, o));
-              local.forEach((o) => {
-                if (!map.has(o.id) && o.orderStatus !== 'PAYMENT_PENDING' && o.paymentStatus === 'VERIFIED') {
-                  map.set(o.id, o);
-                }
-              });
-              return Array.from(map.values()).sort(
-                (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-              );
-            });
-            setIsSupabaseConnected(true);
-          }
-        }
-      } catch (err) {
-        console.log('Supabase fetch note (local cache active):', err);
       }
-    }
-
-    syncFromSupabase();
-
-    return () => {
-      isMounted = false;
+      if (e.key === 'sakthi_foods' && e.newValue) {
+        try {
+          setFoods(JSON.parse(e.newValue));
+        } catch {}
+      }
+      if (e.key === 'sakthi_favorites' && e.newValue) {
+        try {
+          setFavorites(JSON.parse(e.newValue));
+        } catch {}
+      }
+      if (e.key === 'sakthi_notifications' && e.newValue) {
+        try {
+          setNotifications(JSON.parse(e.newValue));
+        } catch {}
+      }
+      if (e.key === 'sakthi_restaurant_config' && e.newValue) {
+        try {
+          setRestaurantConfig(JSON.parse(e.newValue));
+        } catch {}
+      }
     };
+
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
 
-  // 3. Supabase Real-time Subscriptions (Orders & Foods Live Sync)
-  useEffect(() => {
-    const ordersChannel = supabase
-      .channel('realtime:orders_sync')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'orders' },
-        (payload) => {
-          if (payload.eventType === 'INSERT') {
-            const newOrder = mapOrderFromDb(payload.new);
-            // Strictly ignore any unpaid or payment pending inserts
-            if (newOrder.orderStatus === 'PAYMENT_PENDING' || newOrder.paymentStatus !== 'VERIFIED') return;
-            setOrders((prev) => {
-              if (prev.some((o) => o.id === newOrder.id)) return prev;
-              return [newOrder, ...prev];
-            });
-          } else if (payload.eventType === 'UPDATE') {
-            const updated = mapOrderFromDb(payload.new);
-            setOrders((prev) => {
-              // If order was cancelled or pending, remove from active list
-              if (updated.orderStatus === 'PAYMENT_PENDING' || updated.paymentStatus !== 'VERIFIED') {
-                return prev.filter((o) => o.id !== updated.id);
-              }
-              const exists = prev.some((o) => o.id === updated.id);
-              if (exists) {
-                return prev.map((o) => (o.id === updated.id ? { ...o, ...updated } : o));
-              }
-              return [updated, ...prev];
-            });
-          } else if (payload.eventType === 'DELETE') {
-            const deletedId = (payload.old as any)?.id;
-            if (deletedId) {
-              setOrders((prev) => prev.filter((o) => o.id !== deletedId));
-            }
-          }
-        }
-      )
-      .subscribe();
-
-    const foodsChannel = supabase
-      .channel('realtime:foods_sync')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'foods' },
-        (payload) => {
-          if (payload.eventType === 'INSERT') {
-            const newFood = mapFoodFromDb(payload.new);
-            setFoods((prev) => {
-              if (prev.some((f) => f.id === newFood.id)) return prev;
-              return [newFood, ...prev];
-            });
-          } else if (payload.eventType === 'UPDATE') {
-            const updated = mapFoodFromDb(payload.new);
-            setFoods((prev) =>
-              prev.map((f) => (f.id === updated.id ? { ...f, ...updated } : f))
-            );
-          } else if (payload.eventType === 'DELETE') {
-            const deletedId = (payload.old as any)?.id;
-            if (deletedId) {
-              setFoods((prev) => prev.filter((f) => f.id !== deletedId));
-            }
-          }
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(ordersChannel);
-      supabase.removeChannel(foodsChannel);
-    };
+  const updateRestaurantConfig = useCallback((updates: Partial<RestaurantConfig>) => {
+    setRestaurantConfig((prev) => {
+      const updated = { ...prev, ...updates };
+      try {
+        localStorage.setItem('sakthi_restaurant_config', JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
   }, []);
 
-  // Persist local backup state updates
-  useEffect(() => {
-    try {
-      localStorage.setItem('bc_foods', JSON.stringify(foods));
-    } catch {}
-  }, [foods]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('bc_meal_schedules', JSON.stringify(mealSchedules));
-    } catch {}
-  }, [mealSchedules]);
-
-  useEffect(() => {
-    try {
-      const cleanOrders = orders.filter(
-        (o) => o.orderStatus !== 'PAYMENT_PENDING' && o.paymentStatus === 'VERIFIED'
-      );
-      localStorage.setItem('bc_orders', JSON.stringify(cleanOrders));
-    } catch {}
-  }, [orders]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('bc_favorites', JSON.stringify(favorites));
-    } catch {}
-  }, [favorites]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('bc_notifications', JSON.stringify(notifications));
-    } catch {}
-  }, [notifications]);
-
-  const setSimulatedTime = (timeStr: string | null) => {
-    setSimulatedTimeState(timeStr);
-    try {
-      if (timeStr) localStorage.setItem('bc_sim_time', timeStr);
-      else localStorage.removeItem('bc_sim_time');
-    } catch {}
-  };
-
-  // Compute effective time
+  // Effective time computation
   const effectiveTime = useMemo(() => {
     if (!simulatedTime) return systemClock;
-    const [hours, mins] = simulatedTime.split(':').map(Number);
+    const [h, m] = simulatedTime.split(':').map(Number);
     const d = new Date(systemClock);
-    d.setHours(hours || 12, mins || 0, 0, 0);
+    d.setHours(h || 0, m || 0, 0, 0);
     return d;
   }, [simulatedTime, systemClock]);
 
   const currentTimeStr = useMemo(() => {
-    const h = effectiveTime.getHours().toString().padStart(2, '0');
-    const m = effectiveTime.getMinutes().toString().padStart(2, '0');
+    const h = String(effectiveTime.getHours()).padStart(2, '0');
+    const m = String(effectiveTime.getMinutes()).padStart(2, '0');
     return `${h}:${m}`;
   }, [effectiveTime]);
 
-  // Determine active meal dynamically based on admin-defined meal schedules
+  const setSimulatedTime = (timeStr: string | null) => {
+    setSimulatedTimeState(timeStr);
+  };
+
+  // Active meal determination
   const activeMealInfo = useMemo<ActiveMealInfo>(() => {
-    const currentMins = effectiveTime.getHours() * 60 + effectiveTime.getMinutes();
+    const currentMins = parseMinutes(currentTimeStr);
 
-    for (const schedule of mealSchedules || []) {
-      if (!schedule || !schedule.isActive || schedule.isAllDay) continue;
-      const start = parseMinutes(schedule.startTime || '00:00');
-      const end = parseMinutes(schedule.endTime || '23:59');
+    for (const schedule of mealSchedules) {
+      if (!schedule.isActive) continue;
+      const startMins = parseMinutes(schedule.startTime);
+      const endMins = parseMinutes(schedule.endTime);
 
-      if (currentMins >= start && currentMins < end) {
+      let isServing = false;
+      if (startMins <= endMins) {
+        isServing = currentMins >= startMins && currentMins < endMins;
+      } else {
+        isServing = currentMins >= startMins || currentMins < endMins;
+      }
+
+      if (isServing) {
         return {
           category: schedule.id as MealCategory,
           name: schedule.name,
           label: schedule.label,
           icon: schedule.icon,
-          statusText: `Serving now · Until ${formatTime12h(schedule.endTime)}`,
+          statusText: `Serving until ${formatTime12h(schedule.endTime)}`,
           isServing: true,
           schedule,
         };
       }
     }
 
-    const snacks = mealSchedules.find((m) => m.id === 'snacks' && m.isActive);
     return {
-      category: 'snacks',
-      name: 'Snacks',
-      label: '🍪 Snacks',
-      icon: '🍪',
-      statusText: 'Available all day · Fresh & Hot',
+      category: 'lunch',
+      name: 'All Day Specials',
+      label: '🍛 Meals & Snacks',
+      icon: '🍛',
+      statusText: 'Kitchen is open for online ordering',
       isServing: true,
-      schedule: snacks,
     };
-  }, [mealSchedules, effectiveTime]);
+  }, [mealSchedules, currentTimeStr]);
 
-  // Admin schedule update
   const updateMealSchedule = (id: string, updates: Partial<MealSchedule>) => {
-    setMealSchedules((prev) =>
-      prev.map((item) => {
-        if (item.id === id) {
-          const updated = { ...item, ...updates };
-          safeDbSync(() => supabase.from('meal_schedules').upsert(mapScheduleToDb(updated)));
-          return updated;
-        }
-        return item;
-      })
-    );
+    setMealSchedules((prev) => {
+      const updated = prev.map((s) => (s.id === id ? { ...s, ...updates } : s));
+      localStorage.setItem('sakthi_meal_schedules', JSON.stringify(updated));
+      return updated;
+    });
   };
 
-  // Food actions with Supabase persistence
+  // Food items management
   const toggleFoodAvailability = (id: string) => {
-    setFoods((prev) =>
-      prev.map((f) => {
-        if (f.id === id) {
-          const newStatus = !f.isAvailable;
-          safeDbSync(() => supabase.from('foods').update({ is_available: newStatus }).eq('id', id));
-          return { ...f, isAvailable: newStatus };
-        }
-        return f;
-      })
-    );
+    setFoods((prev) => {
+      const updated = prev.map((f) => (f.id === id ? { ...f, isAvailable: !f.isAvailable } : f));
+      localStorage.setItem('sakthi_foods', JSON.stringify(updated));
+      return updated;
+    });
   };
 
   const toggleFoodVisibility = (id: string) => {
-    setFoods((prev) =>
-      prev.map((f) => {
-        if (f.id === id) {
-          const newVis = !f.isVisible;
-          safeDbSync(() => supabase.from('foods').update({ is_visible: newVis }).eq('id', id));
-          return { ...f, isVisible: newVis };
-        }
-        return f;
-      })
-    );
+    setFoods((prev) => {
+      const updated = prev.map((f) => (f.id === id ? { ...f, isVisible: !f.isVisible } : f));
+      localStorage.setItem('sakthi_foods', JSON.stringify(updated));
+      return updated;
+    });
   };
 
-  const addFoodItem = (newFood: Omit<FoodItem, 'id'>) => {
-    const id = `food-${Date.now()}`;
-    const fullFood: FoodItem = {
-      ...newFood,
-      id,
+  const addFoodItem = (food: Omit<FoodItem, 'id'>) => {
+    const newFood: FoodItem = {
+      ...food,
+      id: `food-${Date.now()}`,
     };
-    setFoods((prev) => [fullFood, ...prev]);
-
-    safeDbSync(() => supabase.from('foods').insert(mapFoodToDb(fullFood)));
-    logCanteenEvent('food_item_added', { food_id: id, food_name: newFood.name, price: newFood.price });
-
+    setFoods((prev) => {
+      const updated = [newFood, ...prev];
+      localStorage.setItem('sakthi_foods', JSON.stringify(updated));
+      return updated;
+    });
     addNotification(
-      `New Dish Added: ${newFood.name}`,
-      `Fresh on the menu! ${newFood.name} (₹${newFood.price}) is now available at Best Canteen. Check it out!`,
+      'New Dish Added!',
+      `${newFood.name} (₹${newFood.price}) is now available on SAKTHI MESS menu.`,
       'menu'
     );
   };
 
   const updateFoodItem = (id: string, updates: Partial<FoodItem>) => {
-    setFoods((prev) =>
-      prev.map((f) => {
-        if (f.id === id) {
-          const updated = { ...f, ...updates };
-          safeDbSync(() => supabase.from('foods').update(mapFoodToDb(updated)).eq('id', id));
-          return updated;
-        }
-        return f;
-      })
-    );
+    setFoods((prev) => {
+      const updated = prev.map((f) => (f.id === id ? { ...f, ...updates } : f));
+      localStorage.setItem('sakthi_foods', JSON.stringify(updated));
+      return updated;
+    });
   };
 
   const deleteFoodItem = (id: string) => {
-    setFoods((prev) => prev.filter((f) => f.id !== id));
-    safeDbSync(() => supabase.from('foods').delete().eq('id', id));
+    setFoods((prev) => {
+      const updated = prev.filter((f) => f.id !== id);
+      localStorage.setItem('sakthi_foods', JSON.stringify(updated));
+      return updated;
+    });
   };
 
   const toggleFavorite = (foodId: string) => {
-    setFavorites((prev) =>
-      prev.includes(foodId) ? prev.filter((id) => id !== foodId) : [...prev, foodId]
-    );
-  };
-
-  // Order Lifecycle
-  const createOrder = (
-    items: OrderItem[],
-    notes?: string,
-    customerDetails?: { id?: string; name?: string; phone?: string; email?: string; avatarUrl?: string },
-    paymentInfo?: { paymentId?: string; razorpayOrderId?: string }
-  ): Order => {
-    const id = generateOrderId();
-    const subtotal = items.reduce((sum, item) => sum + (item.price || 0) * (item.quantity || 1), 0);
-    const tax = 0;
-    const total = subtotal + tax;
-    const qrToken = generateSecureToken(id);
-
-    let activeUserId = customerDetails?.id;
-    let activeUserName = customerDetails?.name;
-    let activeUserPhone = customerDetails?.phone;
-    let activeUserEmail = customerDetails?.email;
-    let activeUserAvatar = customerDetails?.avatarUrl;
-
-    if ((!activeUserId || !activeUserEmail) && typeof window !== 'undefined') {
-      try {
-        const saved = localStorage.getItem('bc_custom_user');
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          activeUserId = activeUserId || parsed.id;
-          activeUserName = activeUserName || parsed.name;
-          activeUserPhone = activeUserPhone || parsed.phone;
-          activeUserEmail = activeUserEmail || parsed.email;
-          activeUserAvatar = activeUserAvatar || parsed.avatarUrl;
-        }
-      } catch {}
-    }
-
-    const paymentId = paymentInfo?.paymentId || `pay_RPZ${Date.now()}`;
-    const razorpayOrderId = paymentInfo?.razorpayOrderId || `order_RPZ${Date.now().toString().slice(-6)}`;
-
-    // An order is strictly created as a verified paid food token
-    const newOrder: Order = {
-      id,
-      userId: activeUserId || 'customer-online',
-      userName: activeUserName || 'Online Customer',
-      userPhone: activeUserPhone || undefined,
-      userEmail: activeUserEmail || undefined,
-      userAvatar: activeUserAvatar || undefined,
-      items,
-      subtotal,
-      tax,
-      total,
-      orderStatus: 'READY',
-      paymentStatus: 'VERIFIED',
-      paymentId,
-      razorpayOrderId,
-      qrToken,
-      createdAt: new Date().toISOString(),
-      notes,
-    };
-
-    setOrders((prev) => [
-      newOrder,
-      ...prev.filter((o) => o.orderStatus !== 'PAYMENT_PENDING' && o.paymentStatus === 'VERIFIED'),
-    ]);
-
-    safeDbSync(() => supabase.from('orders').insert(mapOrderToDb(newOrder)));
-    logCanteenEvent('order_created', {
-      order_id: id,
-      total,
-      item_count: items.length,
-      payment_id: paymentId,
+    setFavorites((prev) => {
+      const isFav = prev.includes(foodId);
+      const updated = isFav ? prev.filter((id) => id !== foodId) : [...prev, foodId];
+      localStorage.setItem('sakthi_favorites', JSON.stringify(updated));
+      return updated;
     });
-
-    addNotification(
-      `Payment Verified: #${id}`,
-      `Payment confirmed. Your Digital QR token #${id} is active for pickup at Counter 1.`,
-      'payment',
-      id
-    );
-
-    return newOrder;
   };
 
-  const createCashPosOrder = (
-    items: OrderItem[],
-    customerDetails?: { name?: string; phone?: string; notes?: string }
-  ): Order => {
-    const id = generateOrderId();
-    const subtotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
-    const tax = 0;
-    const total = subtotal + tax;
-    const qrToken = generateSecureToken(id);
-
-    const newOrder: Order = {
-      id,
-      userId: 'pos-counter-walkin',
-      userName: customerDetails?.name?.trim() || 'Walk-in Cash Customer',
-      userPhone: customerDetails?.phone?.trim() || 'POS Counter',
-      items,
-      subtotal,
-      tax,
-      total,
-      orderStatus: 'READY',
-      paymentStatus: 'VERIFIED',
-      paymentId: `CASH_POS_${Date.now()}`,
-      razorpayOrderId: `POS_CASH_TILL_${Date.now().toString().slice(-6)}`,
-      qrToken,
-      createdAt: new Date().toISOString(),
-      notes: customerDetails?.notes || 'Paid in Cash at Admin POS Counter',
-    };
-
-    setOrders((prev) => [newOrder, ...prev]);
-
-    safeDbSync(() => supabase.from('orders').insert(mapOrderToDb(newOrder)));
-    logCanteenEvent('cash_pos_order', {
-      order_id: id,
-      total,
-      customer: newOrder.userName,
-    });
-
-    addNotification(
-      `Cash POS Token #${newOrder.id} Generated`,
-      `Token #${newOrder.id} for ${newOrder.userName} generated at counter. Amount: ₹${total}`,
-      'payment',
-      newOrder.id
-    );
-
-    return newOrder;
-  };
-
-  const verifyPayment = (orderId: string, paymentId: string): Order | null => {
-    let updatedOrder: Order | null = null;
-    setOrders((prev) =>
-      prev.map((ord) => {
-        if (ord.id === orderId) {
-          updatedOrder = {
-            ...ord,
-            orderStatus: 'READY',
-            paymentStatus: 'VERIFIED',
-            paymentId,
-            razorpayOrderId: `order_RPZ${Date.now().toString().slice(-6)}`,
-          };
-
-          safeDbSync(() =>
-            supabase
-              .from('orders')
-              .update({
-                order_status: 'READY',
-                payment_status: 'VERIFIED',
-                payment_id: paymentId,
-                razorpay_order_id: updatedOrder?.razorpayOrderId,
-              })
-              .eq('id', orderId)
-          );
-
-          return updatedOrder;
-        }
-        return ord;
-      })
-    );
-
-    if (updatedOrder) {
-      logCanteenEvent('payment_verified', {
-        order_id: orderId,
-        payment_id: paymentId,
-      });
-
-      addNotification(
-        `Payment Verified: #${orderId}`,
-        `Payment confirmed. Your Digital QR token is ready for canteen counter collection.`,
-        'payment',
-        orderId
-      );
-    }
-    return updatedOrder;
-  };
-
-  // Duplicate QR protection & Order Serving
-  const serveOrder = (tokenOrId: string, serverName = 'Canteen Staff') => {
-    let cleanToken = (tokenOrId || '').trim();
-    if (cleanToken.includes('/orders/')) {
-      const match = cleanToken.match(/\/orders\/([A-Za-z0-9_-]+)/);
-      if (match && match[1]) {
-        cleanToken = match[1];
-      }
-    }
-    const cleanId = cleanToken.replace(/^#/, '').trim();
-    const order = orders.find(
-      (o) =>
-        o.id.toUpperCase() === cleanId.toUpperCase() ||
-        o.id.toUpperCase() === cleanToken.toUpperCase() ||
-        o.qrToken === cleanToken ||
-        o.qrToken === tokenOrId.trim()
-    );
-
-    if (!order) {
-      return {
-        success: false,
-        error: 'Invalid token or Order not found in the canteen database.',
-      };
-    }
-
-    if (order.paymentStatus !== 'VERIFIED') {
-      return {
-        success: false,
-        order,
-        error: 'Payment not verified for this order. Please advise customer to complete payment.',
-      };
-    }
-
-    // DUPLICATE QR PROTECTION
-    if (order.orderStatus === 'SERVED') {
-      const servedTime = order.servedAt
-        ? new Date(order.servedAt).toLocaleTimeString('en-IN', {
-            hour: 'numeric',
-            minute: '2-digit',
-            hour12: true,
-          })
-        : 'earlier today';
-      return {
-        success: false,
-        order,
-        servedAt: servedTime,
-        error: `ORDER ALREADY SERVED at ${servedTime}. This token cannot be used again.`,
-      };
-    }
-
-    // Mark as served
-    const nowIso = new Date().toISOString();
-    const updatedOrder: Order = {
-      ...order,
-      orderStatus: 'SERVED',
-      servedAt: nowIso,
-      servedBy: serverName,
-    };
-
-    setOrders((prev) =>
-      prev.map((o) => (o.id === order.id ? updatedOrder : o))
-    );
-
-    safeDbSync(() =>
-      supabase
-        .from('orders')
-        .update({
-          order_status: 'SERVED',
-          served_at: nowIso,
-          served_by: serverName,
-        })
-        .eq('id', order.id)
-    );
-
-    logCanteenEvent('order_served', {
-      order_id: order.id,
-      served_by: serverName,
-    });
-
-    addNotification(
-      `Order #${order.id} Collected`,
-      `Your food has been served at ${serverName}. Enjoy your delicious meal!`,
-      'order',
-      order.id
-    );
-
-    return {
-      success: true,
-      order: updatedOrder,
-    };
-  };
-
-  const addNotification = (
+  // Notification helper
+  const addNotification = useCallback((
     title: string,
     message: string,
-    type: 'order' | 'payment' | 'menu' | 'alert',
+    type: 'order' | 'payment' | 'menu' | 'alert' | 'delivery' = 'order',
     orderId?: string
   ) => {
     const newNotif: NotificationItem = {
@@ -770,36 +356,21 @@ export function CanteenProvider({ children }: { children: React.ReactNode }) {
       title,
       message,
       type,
-      timestamp: 'Just now',
+      timestamp: new Date().toISOString(),
       read: false,
       orderId,
     };
-    setNotifications((prev) => [newNotif, ...prev]);
-
-    // Native Device / Browser Push Notification
-    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
-      try {
-        new Notification(title, {
-          body: message,
-          icon: '/logo-icon.png',
-        });
-      } catch {
-        // Fallback for restricted contexts
-      }
-    }
-  };
-
-  const requestDeviceNotificationPermission = async () => {
-    const result = await requestFirebaseNotificationPermission();
-    return !!result;
-  };
+    setNotifications((prev) => {
+      const updated = [newNotif, ...prev.slice(0, 49)];
+      localStorage.setItem('sakthi_notifications', JSON.stringify(updated));
+      return updated;
+    });
+  }, []);
 
   const markNotificationAsRead = (id: string) => {
     setNotifications((prev) => {
       const updated = prev.map((n) => (n.id === id ? { ...n, read: true } : n));
-      try {
-        localStorage.setItem('bc_notifications', JSON.stringify(updated));
-      } catch {}
+      localStorage.setItem('sakthi_notifications', JSON.stringify(updated));
       return updated;
     });
   };
@@ -807,9 +378,7 @@ export function CanteenProvider({ children }: { children: React.ReactNode }) {
   const markAllNotificationsAsRead = () => {
     setNotifications((prev) => {
       const updated = prev.map((n) => ({ ...n, read: true }));
-      try {
-        localStorage.setItem('bc_notifications', JSON.stringify(updated));
-      } catch {}
+      localStorage.setItem('sakthi_notifications', JSON.stringify(updated));
       return updated;
     });
   };
@@ -817,40 +386,277 @@ export function CanteenProvider({ children }: { children: React.ReactNode }) {
   const deleteNotification = (id: string) => {
     setNotifications((prev) => {
       const updated = prev.filter((n) => n.id !== id);
-      try {
-        localStorage.setItem('bc_notifications', JSON.stringify(updated));
-      } catch {}
+      localStorage.setItem('sakthi_notifications', JSON.stringify(updated));
       return updated;
     });
   };
 
-  // Automated meal time transition notification
-  const lastMealCategoryRef = React.useRef<string>('');
-  useEffect(() => {
-    if (!activeMealInfo || !activeMealInfo.category) return;
-    if (lastMealCategoryRef.current && lastMealCategoryRef.current !== activeMealInfo.category) {
-      addNotification(
-        `${activeMealInfo.name} is Now Serving! ${activeMealInfo.icon}`,
-        `Canteen is now serving fresh ${activeMealInfo.name}. Order your meal token in advance!`,
-        'alert'
-      );
+  const requestDeviceNotificationPermission = async () => {
+    if (typeof window === 'undefined' || !('Notification' in window)) return false;
+    try {
+      const perm = await Notification.requestPermission();
+      return perm === 'granted';
+    } catch {
+      return false;
     }
-    lastMealCategoryRef.current = activeMealInfo.category;
-  }, [activeMealInfo.category, activeMealInfo.name, activeMealInfo.icon]);
+  };
+
+  // Orders Management & Lifecycle
+  const saveOrders = (updatedOrders: Order[]) => {
+    setOrders(updatedOrders);
+    try {
+      localStorage.setItem('sakthi_orders', JSON.stringify(updatedOrders));
+    } catch (e) {
+      console.error('Failed saving orders to localStorage', e);
+    }
+  };
+
+  const createOrder = (
+    items: OrderItem[],
+    notes?: string,
+    customerDetails?: {
+      id?: string;
+      name?: string;
+      phone?: string;
+      email?: string;
+      avatarUrl?: string;
+      deliveryAddress?: DeliveryAddress;
+    },
+    paymentInfo?: {
+      paymentId?: string;
+      razorpayOrderId?: string;
+      paymentMethod?: 'ONLINE_RAZORPAY' | 'CASH_ON_DELIVERY';
+    }
+  ): Order => {
+    const subtotal = items.reduce((s, it) => s + it.price * it.quantity, 0);
+    const deliveryFee =
+      subtotal >= restaurantConfig.freeDeliveryThreshold ? 0 : restaurantConfig.deliveryFee;
+    const discount = 0;
+    const tax = 0;
+    const total = subtotal + deliveryFee - discount;
+
+    const orderNum = generateOrderNumber(orders.length);
+    const nowIso = new Date().toISOString();
+
+    const deliveryAddress: DeliveryAddress =
+      customerDetails?.deliveryAddress || DEMO_ADDRESS;
+
+    const newOrder: Order = {
+      id: orderNum,
+      orderNumber: orderNum,
+      userId: customerDetails?.id || 'cust-online',
+      customerName: customerDetails?.name || 'Valued Customer',
+      customerPhone: customerDetails?.phone || deliveryAddress.phone,
+      customerEmail: customerDetails?.email || 'customer@sakthimess.com',
+      customerAvatar: customerDetails?.avatarUrl,
+      items,
+      deliveryAddress,
+      subtotal,
+      deliveryFee,
+      discount,
+      tax,
+      total,
+      orderStatus: 'PLACED',
+      paymentStatus: paymentInfo?.paymentId ? 'PAID' : 'PENDING',
+      paymentMethod: paymentInfo?.paymentMethod || (paymentInfo?.paymentId ? 'ONLINE_RAZORPAY' : 'CASH_ON_DELIVERY'),
+      paymentId: paymentInfo?.paymentId,
+      razorpayOrderId: paymentInfo?.razorpayOrderId,
+      specialInstructions: notes,
+      estimatedDeliveryMinutes: 30,
+      createdAt: nowIso,
+      updatedAt: nowIso,
+      timeline: [
+        {
+          status: 'PLACED',
+          timestamp: nowIso,
+          label: 'Order Placed',
+          note: `Order #${orderNum} placed successfully`,
+        },
+      ],
+      // Compatibility
+      userName: customerDetails?.name || 'Valued Customer',
+      userPhone: customerDetails?.phone || deliveryAddress.phone,
+      userEmail: customerDetails?.email || 'customer@sakthimess.com',
+    };
+
+    saveOrders([newOrder, ...orders]);
+
+    addNotification(
+      'Order Placed! 🎉',
+      `Your order #${orderNum} has been placed. SAKTHI MESS kitchen will accept it shortly.`,
+      'order',
+      orderNum
+    );
+
+    return newOrder;
+  };
+
+  const createCashPosOrder = (
+    items: OrderItem[],
+    customerDetails?: { name?: string; phone?: string; notes?: string; deliveryAddress?: DeliveryAddress }
+  ): Order => {
+    return createOrder(
+      items,
+      customerDetails?.notes,
+      {
+        id: 'pos-customer',
+        name: customerDetails?.name || 'Counter Customer',
+        phone: customerDetails?.phone || '+91 98765 00000',
+        deliveryAddress: customerDetails?.deliveryAddress || DEMO_ADDRESS,
+      },
+      {
+        paymentMethod: 'CASH_ON_DELIVERY',
+        paymentId: `pos_cash_${Date.now()}`,
+      }
+    );
+  };
+
+  const updateOrderStatus = (
+    orderId: string,
+    newStatus: OrderStatus,
+    note?: string
+  ): Order | null => {
+    const nowIso = new Date().toISOString();
+    let targetOrder: Order | null = null;
+
+    const updated = orders.map((ord) => {
+      if (ord.id === orderId || ord.orderNumber === orderId) {
+        const timeline = ord.timeline || [];
+        const labelMap: Record<OrderStatus, string> = {
+          PLACED: 'Order Placed',
+          ACCEPTED: 'Order Accepted',
+          PREPARING: 'Preparing in Kitchen',
+          PACKING: 'Packing Meal',
+          READY: 'Food Ready for Pickup',
+          OUT_FOR_DELIVERY: 'Out for Delivery',
+          DELIVERED: 'Delivered to Doorstep',
+          CANCELLED: 'Order Cancelled',
+          REJECTED: 'Order Rejected',
+          CREATED: 'Order Created',
+          PAYMENT_PENDING: 'Payment Pending',
+          PAID: 'Payment Verified',
+          SERVED: 'Delivered',
+        };
+
+        const updatedOrder: Order = {
+          ...ord,
+          orderStatus: newStatus,
+          updatedAt: nowIso,
+          deliveredAt: newStatus === 'DELIVERED' ? nowIso : ord.deliveredAt,
+          timeline: [
+            ...timeline,
+            {
+              status: newStatus,
+              timestamp: nowIso,
+              label: labelMap[newStatus] || newStatus,
+              note: note || `Order transitioned to ${newStatus}`,
+            },
+          ],
+        };
+        targetOrder = updatedOrder;
+        return updatedOrder;
+      }
+      return ord;
+    });
+
+    if (targetOrder) {
+      saveOrders(updated);
+
+      // Trigger user-friendly notification based on new status
+      const messageMap: Partial<Record<OrderStatus, string>> = {
+        ACCEPTED: `Your order #${orderId} has been accepted by SAKTHI MESS kitchen.`,
+        PREPARING: `Chef is now preparing your delicious meal for order #${orderId}.`,
+        PACKING: `Your food for order #${orderId} is being packed hot & fresh.`,
+        READY: `Order #${orderId} is ready and waiting for delivery pickup.`,
+        OUT_FOR_DELIVERY: `Your order #${orderId} is out for delivery with our rider!`,
+        DELIVERED: `Your order #${orderId} has been delivered. Enjoy your meal!`,
+        CANCELLED: `Your order #${orderId} was cancelled.`,
+        REJECTED: `Your order #${orderId} could not be accepted.`,
+      };
+
+      if (messageMap[newStatus]) {
+        addNotification(`Order #${orderId} Update`, messageMap[newStatus]!, 'delivery', orderId);
+      }
+    }
+
+    return targetOrder;
+  };
+
+  const acceptOrder = (orderId: string) => updateOrderStatus(orderId, 'ACCEPTED', 'Kitchen accepted order');
+  const startPreparingOrder = (orderId: string) => updateOrderStatus(orderId, 'PREPARING', 'Cooking in progress');
+  const startPackingOrder = (orderId: string) => updateOrderStatus(orderId, 'PACKING', 'Packing order items');
+  const markOrderReady = (orderId: string) => updateOrderStatus(orderId, 'READY', 'Order is packed and ready');
+  const startDelivery = (orderId: string) => updateOrderStatus(orderId, 'OUT_FOR_DELIVERY', 'Rider is on the way');
+  const markOrderDelivered = (orderId: string) => updateOrderStatus(orderId, 'DELIVERED', 'Delivered to customer address');
+  const cancelOrder = (orderId: string, reason?: string) => updateOrderStatus(orderId, 'CANCELLED', reason || 'Cancelled');
+  const rejectOrder = (orderId: string, reason?: string) => updateOrderStatus(orderId, 'REJECTED', reason || 'Rejected by kitchen');
+
+  const assignDeliveryStaff = (
+    orderId: string,
+    staffId: string,
+    staffName: string,
+    staffPhone?: string
+  ): Order | null => {
+    let targetOrder: Order | null = null;
+    const updated = orders.map((ord) => {
+      if (ord.id === orderId || ord.orderNumber === orderId) {
+        const updatedOrd: Order = {
+          ...ord,
+          assignedStaffId: staffId,
+          assignedStaffName: staffName,
+          assignedStaffPhone: staffPhone,
+        };
+        targetOrder = updatedOrd;
+        return updatedOrd;
+      }
+      return ord;
+    });
+    if (targetOrder) saveOrders(updated);
+    return targetOrder;
+  };
+
+  const verifyPayment = (orderId: string, paymentId: string): Order | null => {
+    let verifiedOrder: Order | null = null;
+    const updated = orders.map((ord) => {
+      if (ord.id === orderId || ord.orderNumber === orderId) {
+        const updatedOrd: Order = {
+          ...ord,
+          paymentStatus: 'PAID',
+          paymentId,
+        };
+        verifiedOrder = updatedOrd;
+        return updatedOrd;
+      }
+      return ord;
+    });
+    if (verifiedOrder) saveOrders(updated);
+    return verifiedOrder;
+  };
+
+  const serveOrder = (orderId: string, staffName = 'Sakthi Mess Staff') => {
+    const ord = markOrderDelivered(orderId);
+    if (!ord) {
+      return { success: false, error: 'Order not found' };
+    }
+    return { success: true, order: ord, servedAt: new Date().toISOString() };
+  };
 
   return (
-    <CanteenContext.Provider
+    <SakthiMessContext.Provider
       value={{
         mealSchedules,
         foods,
         orders,
         favorites,
         notifications,
+        categories: FOOD_CATEGORIES,
+        restaurantConfig,
+        updateRestaurantConfig,
         simulatedTime,
         activeMealInfo,
         effectiveTime,
         currentTimeStr,
-        isSupabaseConnected,
+        isSupabaseConnected: true,
         setSimulatedTime,
         updateMealSchedule,
         toggleFoodAvailability,
@@ -861,6 +667,16 @@ export function CanteenProvider({ children }: { children: React.ReactNode }) {
         toggleFavorite,
         createOrder,
         createCashPosOrder,
+        updateOrderStatus,
+        acceptOrder,
+        startPreparingOrder,
+        startPackingOrder,
+        markOrderReady,
+        assignDeliveryStaff,
+        startDelivery,
+        markOrderDelivered,
+        cancelOrder,
+        rejectOrder,
         verifyPayment,
         serveOrder,
         addNotification,
@@ -871,12 +687,15 @@ export function CanteenProvider({ children }: { children: React.ReactNode }) {
       }}
     >
       {children}
-    </CanteenContext.Provider>
+    </SakthiMessContext.Provider>
   );
 }
 
 export function useCanteen() {
-  const context = useContext(CanteenContext);
+  const context = useContext(SakthiMessContext);
   if (!context) throw new Error('useCanteen must be used within a CanteenProvider');
   return context;
 }
+
+export const useSakthiMess = useCanteen;
+export const SakthiMessProvider = CanteenProvider;

@@ -11,11 +11,13 @@ export function FloatingCartBar() {
   const pathname = usePathname();
   const { totalItems, total } = useCart();
 
-  // Don't show floating cart if already on cart, checkout, or payment page
+  // Don't show floating cart if already on cart, checkout, or payment page, or in staff/admin
   const isCartFlow =
     pathname.includes('/customer/cart') ||
     pathname.includes('/customer/checkout') ||
     pathname.includes('/customer/payment') ||
+    pathname.includes('/kitchen') ||
+    pathname.includes('/delivery') ||
     pathname.includes('/server') ||
     pathname.includes('/admin');
 
@@ -32,12 +34,12 @@ export function FloatingCartBar() {
       >
         <Link
           href="/customer/cart"
-          className="flex items-center justify-between bg-[#201611] text-white p-3.5 sm:p-4 rounded-2xl shadow-[0_10px_30px_rgba(32,22,17,0.3)] hover:bg-[#2C1E17] transition-all group"
+          className="flex items-center justify-between bg-[#1C1C1C] text-white p-3.5 sm:p-4 rounded-2xl shadow-[0_10px_30px_rgba(0,0,0,0.25)] hover:bg-[#2A2A2A] transition-all group"
         >
           <div className="flex items-center gap-3">
-            <div className="relative bg-[#FF5722] p-2 rounded-xl text-white">
+            <div className="relative bg-[#E23744] p-2 rounded-xl text-white">
               <ShoppingBag className="w-5 h-5" />
-              <span className="absolute -top-1.5 -right-1.5 bg-white text-[#FF5722] text-[10px] font-extrabold w-4 h-4 rounded-full flex items-center justify-center shadow">
+              <span className="absolute -top-1.5 -right-1.5 bg-white text-[#E23744] text-[10px] font-extrabold w-4 h-4 rounded-full flex items-center justify-center shadow">
                 {totalItems}
               </span>
             </div>
@@ -45,13 +47,13 @@ export function FloatingCartBar() {
               <p className="text-xs text-stone-300 font-medium">
                 {totalItems} {totalItems === 1 ? 'item' : 'items'} in cart
               </p>
-              <p className="text-sm font-bold text-white tracking-wide">
+              <p className="text-sm font-black text-white tracking-wide">
                 ₹{(total || 0).toLocaleString('en-IN')}
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-1.5 bg-[#FF5722] px-3.5 py-2 rounded-xl text-xs font-bold text-white group-hover:bg-[#F4511E] transition">
+          <div className="flex items-center gap-1.5 bg-[#E23744] hover:bg-[#B91C2B] px-3.5 py-2 rounded-xl text-xs font-black text-white transition">
             <span>View Cart</span>
             <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
           </div>

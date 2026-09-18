@@ -3,14 +3,22 @@ import './globals.css';
 import { AuthProvider } from '@/context/AuthContext';
 import { CanteenProvider } from '@/context/CanteenContext';
 import { CartProvider } from '@/context/CartContext';
+import { PwaInstallPrompt } from '@/components/common/PwaInstallPrompt';
+import { AppInitializer } from '@/components/splash/AppInitializer';
 
 export const metadata: Metadata = {
-  title: 'Best Canteen — Good Food · Brighter Days',
-  description: 'Digital campus canteen ordering platform with instant Razorpay payments, smart meal timing, and digital QR tokens.',
+  title: 'SAKTHI MESS — Online Food Ordering',
+  description: 'Order delicious food from SAKTHI MESS and get it delivered to your doorstep.',
   manifest: '/manifest.json',
   icons: {
-    icon: '/pwa-icon-192.png',
+    icon: '/favicon.png',
     apple: '/apple-touch-icon.png',
+  },
+  openGraph: {
+    title: 'SAKTHI MESS — Online Food Ordering',
+    description: 'Order delicious food from SAKTHI MESS and get it delivered to your doorstep.',
+    type: 'website',
+    images: ['/logo.png'],
   },
 };
 
@@ -19,11 +27,8 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
-  themeColor: '#FF5722',
+  themeColor: '#E23744',
 };
-
-import { PwaInstallPrompt } from '@/components/common/PwaInstallPrompt';
-import { AppInitializer } from '@/components/splash/AppInitializer';
 
 export default function RootLayout({
   children,
@@ -32,7 +37,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className="min-h-screen bg-[#FDFBF7] text-[#201611] antialiased selection:bg-orange-100 selection:text-orange-900">
+      <body className="min-h-screen bg-[#FFFFFF] text-[#1C1C1C] antialiased selection:bg-rose-100 selection:text-rose-900">
         <AuthProvider>
           <CanteenProvider>
             <CartProvider>

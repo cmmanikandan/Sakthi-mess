@@ -3,204 +3,209 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { useCanteen } from '@/context/CanteenContext';
-import { Search, QrCode, CheckCircle2, Clock, ShoppingBag, ChevronRight, Receipt } from 'lucide-react';
-
-const STATUS_STYLE: Record<string, string> = {
-  SERVED: 'bg-stone-100 text-stone-600',
-  ACTIVE: 'bg-emerald-100 text-emerald-800',
-  READY: 'bg-emerald-100 text-emerald-800',
-  PAID: 'bg-blue-100 text-blue-800',
-};
+import {
+  Search,
+  ShoppingBag,
+  CheckCircle2,
+  Clock,
+  MapPin,
+  Phone,
+  Receipt,
+  ExternalLink,
+} from 'lucide-react';
+import { formatDateTime } from '@/lib/utils';
+import { OrderStatus } from '@/types';
 
 export default function AdminOrdersPage() {
-  const { orders } = useCanteen();
+  const { orders, updateOrderStatus } = useCanteen();
   const [filterStatus, setFilterStatus] = useState<string>('ALL');
   const [search, setSearch] = useState('');
 
-  // Strictly filter out any unverified or payment pending orders
-  const validOrders = orders.filter(
-    (o) => o.orderStatus !== 'PAYMENT_PENDING' && o.paymentStatus === 'VERIFIED'
-  );
-
-  const filtered = validOrders.filter((o) => {
-    if (filterStatus === 'ACTIVE') {
-      if (o.orderStatus !== 'READY' && o.orderStatus !== 'PAID') return false;
-    } else if (filterStatus !== 'ALL' && o.orderStatus !== filterStatus) {
-      return false;
-    }
+  const filtered = orders.filter((o) => {
+    if (filterStatus !== 'ALL' && o.orderStatus !== filterStatus) return false;
     if (
       search &&
-      !o.id.toLowerCase().includes(search.toLowerCase()) &&
-      !o.userName.toLowerCase().includes(search.toLowerCase())
-    ) return false;
+      !o.orderNumber.toLowerCase().includes(search.toLowerCase()) &&
+      !o.customerName.toLowerCase().includes(search.toLowerCase()) &&
+      !(o.customerPhone || '').includes(search)
+    ) {
+      return false;
+    }
     return true;
   });
 
-  const formatDateTime = (iso: string) => {
-    const d = new Date(iso);
-    return {
-      date: d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' }),
-      time: d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
-    };
-  };
-
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-black text-[#201611] tracking-tight">
-            Token Feed
+          <h1 className="text-2xl sm:text-3xl font-black text-[#1C1C1C] tracking-tight">
+            Orders Management
           </h1>
-          <p className="text-xs sm:text-sm text-[#5C4E46] mt-0.5">
-            All issued tokens — payments, collection status, and timestamps
+          <p className="text-xs sm:text-sm text-[#696969] mt-0.5">
+            Monitor and manage live doorstep delivery orders across all lifecycle stages
           </p>
         </div>
-        <div className="flex items-center gap-2 self-start sm:self-auto">
+
+        <div className="flex items-center gap-2">
           <Link
             href="/admin/pos"
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-2xl bg-[#FF5722] hover:bg-orange-600 text-white text-xs font-bold shadow-xs transition"
+            className="px-4 py-2 rounded-2xl bg-[#E23744] hover:bg-[#B91C2B] text-white text-xs font-black shadow-xs transition"
           >
-            <Receipt className="w-4 h-4" />
-            <span>+ Open Cash POS</span>
+            + Quick POS Order
           </Link>
-          <span className="bg-white border border-stone-200 px-3.5 py-2 rounded-2xl text-xs font-bold text-stone-600 shadow-2xs">
-            {validOrders.length} Tokens
+          <span className="bg-white border border-[#E8E8E8] px-3.5 py-2 rounded-2xl text-xs font-black text-[#1C1C1C]">
+            {orders.length} Total
           </span>
         </div>
       </div>
 
-      {/* Filter bar */}
-      <div className="bg-white p-4 rounded-3xl border border-stone-200 shadow-2xs flex flex-col sm:flex-row gap-3">
+      {/* Filter and Search Bar */}
+      <div className="bg-white p-4 rounded-3xl border border-[#E8E8E8] shadow-card flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1">
           <Search className="w-4 h-4 text-stone-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
           <input
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by Token # or customer name..."
-            className="w-full pl-10 pr-4 py-2 text-xs border border-stone-200 rounded-xl bg-stone-50"
+            placeholder="Search by Order #, customer name, or phone..."
+            className="w-full pl-10 pr-4 py-2 text-xs border border-stone-200 rounded-xl bg-stone-50 text-[#1C1C1C]"
           />
         </div>
+
         <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
-          {['ALL', 'ACTIVE', 'PAID', 'SERVED'].map((status) => (
+          {[
+            'ALL',
+            'PLACED',
+            'ACCEPTED',
+            'PREPARING',
+            'PACKING',
+            'READY',
+            'OUT_FOR_DELIVERY',
+            'DELIVERED',
+            'CANCELLED',
+          ].map((st) => (
             <button
-              key={status}
-              onClick={() => setFilterStatus(status)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition ${
-                filterStatus === status
-                  ? 'bg-[#FF5722] text-white shadow-xs'
+              key={st}
+              onClick={() => setFilterStatus(st)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-black whitespace-nowrap transition ${
+                filterStatus === st
+                  ? 'bg-[#E23744] text-white shadow-xs'
                   : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
               }`}
             >
-              {status}
+              {st.replace(/_/g, ' ')}
             </button>
           ))}
         </div>
       </div>
 
-      {/* Desktop Table */}
-      <div className="hidden sm:block bg-white rounded-3xl border border-stone-200 shadow-xs overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs text-left">
-            <thead className="bg-[#FAF8F5] border-b border-stone-200 text-[#8C7E76] uppercase font-black tracking-wider text-[10px]">
-              <tr>
-                <th className="p-4">Token ID</th>
-                <th className="p-4">Customer</th>
-                <th className="p-4">Items</th>
-                <th className="p-4">Amount</th>
-                <th className="p-4">Status</th>
-                <th className="p-4">Created</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-stone-100">
-              {filtered.map((ord) => {
-                const { date, time } = formatDateTime(ord.createdAt);
-                const displayStatus = ord.orderStatus === 'READY' ? 'ACTIVE' : ord.orderStatus;
-
-                return (
-                  <tr key={ord.id} className="hover:bg-stone-50/80 transition">
-                    <td className="p-4 font-black text-[#FF5722]">#{ord.id}</td>
-                    <td className="p-4">
-                      <p className="font-bold text-[#201611]">{ord.userName}</p>
-                      <p className="text-[11px] text-stone-400">{ord.userPhone}</p>
-                    </td>
-                    <td className="p-4 max-w-[200px] text-stone-600 truncate">
-                      {ord.items.map((i) => `${i.name} ×${i.quantity}`).join(', ')}
-                    </td>
-                    <td className="p-4">
-                      <div className="font-black text-sm text-[#201611]">₹{ord.total}</div>
-                      {ord.paymentId?.startsWith('CASH_POS') || ord.notes?.toLowerCase().includes('cash') ? (
-                        <span className="inline-block text-[9px] font-extrabold text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 mt-0.5">
-                          💵 Cash POS
-                        </span>
-                      ) : (
-                        <span className="inline-block text-[9px] font-extrabold text-blue-800 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200 mt-0.5">
-                          💳 Online
-                        </span>
-                      )}
-                    </td>
-                    <td className="p-4">
-                      <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full ${displayStatus === 'ACTIVE' ? 'bg-emerald-100 text-emerald-800' : STATUS_STYLE[ord.orderStatus] || 'bg-stone-100 text-stone-500'}`}>
-                        {displayStatus}
-                      </span>
-                    </td>
-                    <td className="p-4">
-                      <p className="font-semibold text-[#201611]">{date}</p>
-                      <p className="text-[11px] text-stone-400">{time}</p>
-                    </td>
-                  </tr>
-                );
-              })}
-              {filtered.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="p-12 text-center text-stone-400 text-xs">
-                    No tokens match the current filter.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+      {/* Orders Grid/List */}
+      {filtered.length === 0 ? (
+        <div className="text-center py-20 bg-white rounded-3xl border border-[#E8E8E8] p-8 space-y-2">
+          <p className="text-base font-black text-[#1C1C1C]">No matching orders</p>
+          <p className="text-xs text-[#696969]">Try clearing filters or search keywords.</p>
         </div>
-      </div>
+      ) : (
+        <div className="space-y-4">
+          {filtered.map((ord) => {
+            const timeInfo = formatDateTime(ord.createdAt);
 
-      {/* Mobile Cards */}
-      <div className="sm:hidden space-y-3">
-        {filtered.map((ord) => {
-          const { date, time } = formatDateTime(ord.createdAt);
-          const displayStatus = ord.orderStatus === 'READY' ? 'ACTIVE' : ord.orderStatus;
+            return (
+              <div
+                key={ord.id}
+                className="bg-white rounded-3xl p-5 border border-[#E8E8E8] shadow-card space-y-3.5"
+              >
+                {/* Top Line */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-stone-100 pb-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-black text-base text-[#1C1C1C]">
+                        Order #{ord.orderNumber}
+                      </span>
+                      <span className="text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full bg-rose-50 text-[#E23744] border border-rose-200">
+                        {ord.orderStatus.replace(/_/g, ' ')}
+                      </span>
+                      <span className="text-[10px] font-bold text-stone-500 bg-stone-100 px-2 py-0.5 rounded-md">
+                        {ord.paymentMethod === 'ONLINE_RAZORPAY' ? 'Online Paid' : 'Cash On Delivery'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-[#696969] mt-0.5">
+                      Placed at {timeInfo.date} · {timeInfo.time}
+                    </p>
+                  </div>
 
-          return (
-            <div key={ord.id} className="bg-white rounded-2xl p-4 border border-stone-200 shadow-2xs space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5">
-                  <span className="font-black text-sm text-[#FF5722]">#{ord.id}</span>
-                  {ord.paymentId?.startsWith('CASH_POS') || ord.notes?.toLowerCase().includes('cash') ? (
-                    <span className="text-[9px] font-extrabold text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
-                      💵 Cash
+                  <div className="flex items-center gap-3">
+                    <span className="text-base font-black text-[#1C1C1C]">
+                      ₹{ord.total}
                     </span>
-                  ) : null}
+                    <Link
+                      href={`/customer/orders/${ord.id}`}
+                      className="text-xs font-bold text-[#E23744] hover:underline flex items-center gap-1"
+                    >
+                      <span>Track</span>
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </Link>
+                  </div>
                 </div>
-                <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full ${displayStatus === 'ACTIVE' ? 'bg-emerald-100 text-emerald-800' : STATUS_STYLE[ord.orderStatus] || 'bg-stone-100 text-stone-500'}`}>
-                  {displayStatus}
-                </span>
+
+                {/* Body details */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+                  {/* Customer and Delivery Address */}
+                  <div className="p-3 bg-[#F8F8F8] rounded-2xl border border-[#E8E8E8] space-y-1">
+                    <p className="text-[10px] uppercase font-black text-[#696969]">Deliver To:</p>
+                    <p className="font-extrabold text-[#1C1C1C]">
+                      {ord.customerName} ({ord.customerPhone})
+                    </p>
+                    <p className="text-[#696969]">
+                      {ord.deliveryAddress?.label}: {ord.deliveryAddress?.addressLine1}
+                      {ord.deliveryAddress?.addressLine2 ? `, ${ord.deliveryAddress.addressLine2}` : ''}
+                    </p>
+                    <p className="text-[#696969]">
+                      {ord.deliveryAddress?.city} - {ord.deliveryAddress?.pincode}
+                    </p>
+                    {ord.specialInstructions && (
+                      <p className="text-amber-800 font-medium pt-1">
+                        Note: {ord.specialInstructions}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Food items */}
+                  <div className="p-3 bg-[#F8F8F8] rounded-2xl border border-[#E8E8E8] space-y-1">
+                    <p className="text-[10px] uppercase font-black text-[#696969]">Items:</p>
+                    {ord.items.map((it, idx) => (
+                      <div key={idx} className="flex justify-between text-[#1C1C1C]">
+                        <span>{it.name} <strong className="text-[#E23744]">× {it.quantity}</strong></span>
+                        <span className="font-bold">₹{it.price * it.quantity}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Quick Status Override Dropdown for Admin */}
+                <div className="flex items-center justify-between pt-2 border-t border-stone-100 text-xs">
+                  <span className="text-[#696969]">Update Order Status:</span>
+                  <select
+                    value={ord.orderStatus}
+                    onChange={(e) => updateOrderStatus(ord.id, e.target.value as OrderStatus)}
+                    className="px-3 py-1.5 rounded-xl border border-stone-200 bg-white font-bold text-xs focus:border-[#E23744] focus:outline-none"
+                  >
+                    <option value="PLACED">Placed</option>
+                    <option value="ACCEPTED">Accepted</option>
+                    <option value="PREPARING">Preparing</option>
+                    <option value="PACKING">Packing</option>
+                    <option value="READY">Ready</option>
+                    <option value="OUT_FOR_DELIVERY">Out for Delivery</option>
+                    <option value="DELIVERED">Delivered</option>
+                    <option value="CANCELLED">Cancelled</option>
+                  </select>
+                </div>
               </div>
-              <p className="font-bold text-sm text-[#201611]">{ord.userName}</p>
-              <p className="text-xs text-stone-500">
-                {ord.items.map((i) => `${i.name} ×${i.quantity}`).join(' · ')}
-              </p>
-              <div className="flex items-center justify-between pt-1 border-t border-stone-100">
-                <span className="font-black text-[#FF5722]">₹{ord.total}</span>
-                <span className="text-[11px] text-stone-400">{date} · {time}</span>
-              </div>
-            </div>
-          );
-        })}
-        {filtered.length === 0 && (
-          <div className="bg-white rounded-3xl p-10 text-center text-stone-400 text-xs border border-stone-200">
-            No tokens match the current filter.
-          </div>
-        )}
-      </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

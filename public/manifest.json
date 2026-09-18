@@ -1,11 +1,11 @@
 {
-  "name": "Best Canteen",
-  "short_name": "BestCanteen",
-  "description": "Good Food · Brighter Days - Digital Canteen Ordering & QR Token System",
+  "name": "SAKTHI MESS",
+  "short_name": "SAKTHI",
+  "description": "SAKTHI MESS — Online Food Ordering & Doorstep Delivery Platform",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#FF5722",
+  "background_color": "#FFFFFF",
+  "theme_color": "#E23744",
   "icons": [
     {
       "src": "/pwa-icon-192.png",
@@ -20,7 +20,7 @@
       "purpose": "any"
     },
     {
-      "src": "/pwa-maskable-512.png",
+      "src": "/logo-icon.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
